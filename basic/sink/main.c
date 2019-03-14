@@ -92,9 +92,9 @@ __attribute__ ((noreturn))
 static int main_loop(__rte_unused void *dummy) {
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
     uint16_t received, j;
-    
+
     printf("lcore=%u, port=%" PRIu16 ", rte_socket_id=%u\n", rte_lcore_id(), 0, rte_socket_id());
-    
+
 
     for (;;) {
         received = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
@@ -113,6 +113,16 @@ static int main_loop(__rte_unused void *dummy) {
             calculate_hit(pkts_burst[j]);
         }
     }
+}
+
+static volatile bool stop = false;
+
+static int main_loop_waste(__rte_unused void *dummy) {
+    printf("lcore=%u, waste, rte_socket_id=%u\n", rte_lcore_id(), rte_socket_id());
+    while (!stop) {
+        rte_delay_ms(1000);
+    }
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -150,6 +160,12 @@ int main(int argc, char **argv) {
     if (unlikely(lcore == RTE_MAX_LCORE)) rte_exit(EXIT_FAILURE, "Require at least 2 cores.\n");
 
     rte_eal_remote_launch(main_loop, NULL, lcore);
+
+    for (;;) {
+        lcore = rte_get_next_lcore(lcore, 1, 0);
+        if (lcore == RTE_MAX_LCORE) break;
+        rte_eal_remote_launch(main_loop_waste, NULL, lcore);
+    }
 
     for (;;) {
         printf("%" PRIu64 "\t%" PRIu64 "\n", count, hit);

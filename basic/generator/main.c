@@ -205,6 +205,7 @@ static int main_loop_single_ref(__rte_unused void *dummy) {
 int main(int argc, char **argv) {
     int ret;
     uint16_t nb_ports;
+    unsigned lcore;
     //    uint64_t portid;
 
     ret = rte_eal_init(argc, argv);
@@ -233,14 +234,18 @@ int main(int argc, char **argv) {
 
     check_all_ports_link_status();
 
-    //    main_loop_single(NULL);
     if (use_ref) {
         main_loop_single_ref(NULL);
     } else {
         main_loop_single(NULL);
     }
+    
+    lcore = rte_get_next_lcore(-1, 1, 0);
+    if (lcore == RTE_MAX_LCORE) {
+        rte_exit(EXIT_FAILURE, "Require at least 2 cores.\n");
+    }
 
-    rte_eal_wait_lcore(12);
+    rte_eal_wait_lcore(lcore);
 
     return 0;
 }

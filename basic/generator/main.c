@@ -178,7 +178,7 @@ static int main_loop_single_ref(__rte_unused void *dummy) {
         char *data = rte_pktmbuf_append(pkt, pkt_size);
         struct ether_hdr *pkt_hdr = (struct ether_hdr *) data;
         rte_memcpy(pkt_hdr, hdr, sizeof (struct ether_hdr));
-//        rte_mbuf_refcnt_set(pkt, MAX_PKT_BURST);
+        //        rte_mbuf_refcnt_set(pkt, MAX_PKT_BURST);
 
         for (i = 0; i < MAX_PKT_BURST; i++) {
             pkts_burst[i] = pkt;
@@ -188,7 +188,7 @@ static int main_loop_single_ref(__rte_unused void *dummy) {
         total += ret;
         if (unlikely(ret < MAX_PKT_BURST)) {
             dropped += MAX_PKT_BURST - ret;
-//            rte_mbuf_refcnt_update(pkt, -ret);
+            //            rte_mbuf_refcnt_update(pkt, -ret);
             rte_pktmbuf_free(pkt);
         }
 
@@ -199,6 +199,16 @@ static int main_loop_single_ref(__rte_unused void *dummy) {
     printf("sent\tduration\thz\tdropped\n%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
             total, end - start, rte_get_timer_hz(), dropped);
 
+    return 0;
+}
+
+static volatile bool stop = false;
+
+static int main_loop_waste(__rte_unused void *dummy) {
+    printf("lcore=%u, waste, rte_socket_id=%u\n", rte_lcore_id(), rte_socket_id());
+    while (!stop) {
+        rte_delay_ms(1000);
+    }
     return 0;
 }
 
@@ -234,18 +244,26 @@ int main(int argc, char **argv) {
 
     check_all_ports_link_status();
 
+    lcore = -1;
+    for (;;) {
+        lcore = rte_get_next_lcore(lcore, 1, 0);
+        if (lcore == RTE_MAX_LCORE) break;
+        rte_eal_remote_launch(main_loop_waste, NULL, lcore);
+    }
+
     if (use_ref) {
         main_loop_single_ref(NULL);
     } else {
         main_loop_single(NULL);
     }
-    
-    lcore = rte_get_next_lcore(-1, 1, 0);
-    if (lcore == RTE_MAX_LCORE) {
-        rte_exit(EXIT_FAILURE, "Require at least 2 cores.\n");
+    stop = true;
+
+    RTE_LCORE_FOREACH_SLAVE(lcore) {
+        if (rte_eal_wait_lcore(lcore) < 0)
+            return -1;
     }
 
-    rte_eal_wait_lcore(lcore);
+
 
     return 0;
 }

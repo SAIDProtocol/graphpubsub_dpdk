@@ -124,7 +124,7 @@ static int main_loop_single(__rte_unused void *dummy) {
 
     fill_hdr(0, hdr);
 
-    rte_delay_ms(1000);
+    rte_delay_ms(2000);
 
     start = rte_get_timer_cycles();
     sent = MAX_PKT_BURST;

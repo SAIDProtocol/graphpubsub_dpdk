@@ -1,0 +1,138 @@
+#include <stdbool.h>
+#include <getopt.h>
+#include <rte_common.h>
+#include <rte_branch_prediction.h>
+#include <rte_byteorder.h>
+#include <rte_cycles.h>
+#include <rte_eal.h>
+#include <rte_ether.h>
+#include <rte_malloc.h>
+#include <rte_mbuf.h>
+#include <rte_mempool.h>
+#include "helper.h"
+
+#define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
+#define NB_PKT_MBUF 8192
+#define MAX_PKT_BURST 64
+#define DEFAULT_ETH_TYPE 0x27c1
+#define DEFAULT_PKT_SIZE 125
+#define DEFAULT_PKT_COUNT 64
+
+
+static struct rte_mempool *packet_pool;
+static struct ether_addr src_addr;
+static uint16_t ether_type;
+static volatile uint64_t count = 0, hit = 0;
+
+static void print_usage(char *prgname) {
+    printf("usage: %s %s -- -s %s [-t %s]\n", prgname,
+            "%dpdk_params%", "%src_mac_as_hex%", "%ether_type%");
+}
+
+static int parse_args(int argc, char **argv) {
+    int opt;
+    char **argvopt = argv;
+
+    union {
+        uint64_t as_long;
+        struct ether_addr as_addr;
+    } tmp_dst_mac;
+    char *end;
+
+    tmp_dst_mac.as_long = 0;
+    ether_type = rte_cpu_to_be_16(DEFAULT_ETH_TYPE);
+
+
+    while ((opt = getopt(argc, argvopt, "s:t:")) != EOF) {
+        switch (opt) {
+            case 's':
+                end = NULL;
+                tmp_dst_mac.as_long = rte_cpu_to_be_64(strtoull(optarg, &end, 16)) >> 16;
+                if (optarg[0] == '\0' || (end == NULL) || (*end != '\0')) {
+                    print_usage(argv[0]);
+                    return -1;
+                }
+                src_addr = tmp_dst_mac.as_addr;
+                break;
+            case 't':
+                end = NULL;
+                ether_type = rte_cpu_to_be_16(strtoul(optarg, &end, 0));
+                if (optarg[0] == '\0' || (end == NULL) || (*end != '\0')) {
+                    print_usage(argv[0]);
+                    return -1;
+                }
+                break;
+            default:
+                print_usage(argv[0]);
+                return -1;
+        }
+    }
+
+    if (!tmp_dst_mac.as_long) {
+        print_usage(argv[0]);
+        return -1;
+    }
+    print_ethaddr("SRC_ADDR=", &src_addr);
+    printf(", ether_type=0x%04" PRIx16 "\n", rte_be_to_cpu_16(ether_type));
+
+    return 0;
+}
+
+__attribute__ ((noreturn))
+static int main_loop(__rte_unused void *dummy) {
+    struct rte_mbuf * pkts_burst[MAX_PKT_BURST], *pkt;
+    uint16_t received;
+
+    for (;;) {
+        received = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
+        count += received;
+        while (likely(received > 0)) {
+            pkt = pkts_burst[--received];
+            struct ether_hdr *hdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
+            if (is_same_ether_addr(&hdr->s_addr, &src_addr) && hdr->ether_type == ether_type) {
+                hit++;
+            }
+            rte_pktmbuf_free(pkt);
+        }
+    }
+}
+
+int main(int argc, char **argv) {
+    int ret;
+    uint16_t nb_ports;
+    //    uint64_t portid;
+
+    ret = rte_eal_init(argc, argv);
+    if (ret < 0) rte_exit(EXIT_FAILURE, "Invalid EAL parameters\n");
+    argc -= ret;
+    argv += ret;
+
+    ret = parse_args(argc, argv);
+    if (ret < 0) rte_exit(EXIT_FAILURE, "Invalid generator parameters\n");
+
+    printf("rte_socket_id=%u\n", rte_socket_id());
+    /* create the mbuf pools */
+    packet_pool = rte_pktmbuf_pool_create("packet_pool", NB_PKT_MBUF, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
+
+    if (!unlikely(packet_pool)) rte_exit(EXIT_FAILURE, "Cannot init packet mbuf pool\n");
+
+    nb_ports = rte_eth_dev_count_avail();
+    printf("nb_ports=%" PRIu16 "\n", nb_ports);
+    //    if (!unlikely(nb_ports)) rte_exit(EXIT_FAILURE, "No physical ports!\n");
+    if (unlikely(nb_ports != 1)) rte_exit(EXIT_FAILURE, "Only supports 1 port, use -w to specify the interface you need.\n");
+
+    //    RTE_ETH_FOREACH_DEV(portid) {
+    //        enable_port(portid, 1, packet_pool);
+    //    }
+    enable_port(0, 1, packet_pool);
+
+    check_all_ports_link_status();
+
+    rte_eal_remote_launch(main_loop, NULL, 12);
+
+    for (;;) {
+        printf("%" PRIu64 "\t%" PRIu64 "\n", count, hit);
+        rte_delay_ms(1000);
+    }
+    return 0;
+}

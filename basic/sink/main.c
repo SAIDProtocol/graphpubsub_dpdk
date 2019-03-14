@@ -9,6 +9,7 @@
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_mempool.h>
+#include <rte_prefetch.h>
 #include "helper.h"
 
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
@@ -17,6 +18,7 @@
 #define DEFAULT_ETH_TYPE 0x27c1
 #define DEFAULT_PKT_SIZE 125
 #define DEFAULT_PKT_COUNT 64
+#define PREFETCH_OFFSET 3
 
 
 static struct rte_mempool *packet_pool;
@@ -78,21 +80,37 @@ static int parse_args(int argc, char **argv) {
     return 0;
 }
 
+static inline void calculate_hit(struct rte_mbuf *pkt) {
+    struct ether_hdr *hdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
+    if (is_same_ether_addr(&hdr->s_addr, &src_addr) && hdr->ether_type == ether_type) {
+        hit++;
+    }
+    rte_pktmbuf_free(pkt);
+}
+
 __attribute__ ((noreturn))
 static int main_loop(__rte_unused void *dummy) {
-    struct rte_mbuf * pkts_burst[MAX_PKT_BURST], *pkt;
-    uint16_t received;
+    struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
+    uint16_t received, j;
+    
+    printf("lcore=%u, port=%" PRIu16 ", rte_socket_id=%u\n", rte_lcore_id(), 0, rte_socket_id());
+    
 
     for (;;) {
         received = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
         count += received;
-        while (likely(received > 0)) {
-            pkt = pkts_burst[--received];
-            struct ether_hdr *hdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
-            if (is_same_ether_addr(&hdr->s_addr, &src_addr) && hdr->ether_type == ether_type) {
-                hit++;
-            }
-            rte_pktmbuf_free(pkt);
+        /* Prefetch first packets */
+        for (j = 0; j < PREFETCH_OFFSET && j < received; j++) {
+            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
+        }
+        /* Prefetch and forward already prefetched packets */
+        for (j = 0; j < (received - PREFETCH_OFFSET); j++) {
+            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[ j + PREFETCH_OFFSET], void *));
+            calculate_hit(pkts_burst[j]);
+        }
+        /* Forward remaining prefetched packets */
+        for (; j < received; j++) {
+            calculate_hit(pkts_burst[j]);
         }
     }
 }
@@ -100,7 +118,7 @@ static int main_loop(__rte_unused void *dummy) {
 int main(int argc, char **argv) {
     int ret;
     uint16_t nb_ports;
-    //    uint64_t portid;
+    unsigned lcore;
 
     ret = rte_eal_init(argc, argv);
     if (ret < 0) rte_exit(EXIT_FAILURE, "Invalid EAL parameters\n");
@@ -128,7 +146,10 @@ int main(int argc, char **argv) {
 
     check_all_ports_link_status();
 
-    rte_eal_remote_launch(main_loop, NULL, 12);
+    lcore = rte_get_next_lcore(-1, 1, 0);
+    if (unlikely(lcore == RTE_MAX_LCORE)) rte_exit(EXIT_FAILURE, "Require at least 2 cores.\n");
+
+    rte_eal_remote_launch(main_loop, NULL, lcore);
 
     for (;;) {
         printf("%" PRIu64 "\t%" PRIu64 "\n", count, hit);

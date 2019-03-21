@@ -121,7 +121,6 @@ static inline void forward_packet(struct rte_mbuf *pkt) {
         to_send[pkt_count++] = pkt;
         rte_memcpy(hdr, hdr_template, sizeof (struct ether_hdr));
 
-
         if (unlikely(pkt_count == MAX_PKT_BURST))
             send_burst();
 
@@ -144,7 +143,7 @@ static void fill_hdr(uint64_t port, struct ether_hdr *hdr) {
 __attribute__ ((noreturn))
 static int main_loop(__rte_unused void *dummy) {
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
-    uint16_t nb_burst, j;
+    uint16_t nb_burst, j, nb_burst_send;
 
     hdr_template = (struct ether_hdr *) rte_malloc("ether_hdr", sizeof (struct ether_hdr), 0);
     if (unlikely(!hdr_template)) rte_exit(EXIT_FAILURE, "Cannot allocate hdr_template.\n");
@@ -169,6 +168,15 @@ static int main_loop(__rte_unused void *dummy) {
         for (; j < nb_burst; j++) {
             forward_packet(pkts_burst[j]);
         }
+        //        nb_burst_send = rte_eth_tx_burst(0, 0, pkts_burst, nb_burst);
+        //        sent += nb_burst;
+        //        if (unlikely(nb_burst_send < nb_burst)) {
+        //            dropped += nb_burst - nb_burst_send;
+        //            while (unlikely(nb_burst_send < nb_burst)) {
+        //                rte_pktmbuf_free(pkts_burst[nb_burst_send]);
+        //                nb_burst_send++;
+        //            }
+        //        }
         send_timeout_burst();
     }
 }

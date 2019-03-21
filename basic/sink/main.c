@@ -14,7 +14,7 @@
 
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define NB_PKT_MBUF 8192
-#define MAX_PKT_BURST 64
+#define MAX_PKT_BURST 32
 #define DEFAULT_ETH_TYPE 0x27c1
 #define DEFAULT_PKT_SIZE 125
 #define DEFAULT_PKT_COUNT 64
@@ -24,7 +24,7 @@
 static struct rte_mempool *packet_pool;
 static struct ether_addr src_addr;
 static uint16_t ether_type;
-static volatile uint64_t count = 0, hit = 0;
+static volatile uint64_t count = 0, hit = 0, full = 0, n_full = 0;
 
 static void print_usage(char *prgname) {
     printf("usage: %s %s -- -s %s [-t %s]\n", prgname,
@@ -80,13 +80,13 @@ static int parse_args(int argc, char **argv) {
     return 0;
 }
 
-static inline void calculate_hit(struct rte_mbuf *pkt) {
-    struct ether_hdr *hdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
-    if (is_same_ether_addr(&hdr->s_addr, &src_addr) && hdr->ether_type == ether_type) {
-        hit++;
-    }
-    rte_pktmbuf_free(pkt);
-}
+//static inline void calculate_hit(struct rte_mbuf *pkt) {
+//    struct ether_hdr *hdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
+//    if (is_same_ether_addr(&hdr->s_addr, &src_addr) && hdr->ether_type == ether_type) {
+//        hit++;
+//    }
+//    rte_pktmbuf_free(pkt);
+//}
 
 __attribute__ ((noreturn))
 static int main_loop(__rte_unused void *dummy) {
@@ -99,19 +99,27 @@ static int main_loop(__rte_unused void *dummy) {
     for (;;) {
         received = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
         count += received;
-        /* Prefetch first packets */
-        for (j = 0; j < PREFETCH_OFFSET && j < received; j++) {
-            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
-        }
-        /* Prefetch and forward already prefetched packets */
-        for (j = 0; j < (received - PREFETCH_OFFSET); j++) {
-            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[ j + PREFETCH_OFFSET], void *));
-            calculate_hit(pkts_burst[j]);
-        }
-        /* Forward remaining prefetched packets */
-        for (; j < received; j++) {
-            calculate_hit(pkts_burst[j]);
-        }
+	if (likely(received > 0)) {
+            rte_delay_ms(1000);
+            if (received < MAX_PKT_BURST) n_full++;
+            else full++;
+            while (likely(received > 0)) {
+                rte_pktmbuf_free(pkts_burst[--received]);
+            }
+	}
+//        /* Prefetch first packets */
+//        for (j = 0; j < PREFETCH_OFFSET && j < received; j++) {
+//            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
+//        }
+//        /* Prefetch and forward already prefetched packets */
+//        for (j = 0; j < (received - PREFETCH_OFFSET); j++) {
+//            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[ j + PREFETCH_OFFSET], void *));
+//            calculate_hit(pkts_burst[j]);
+//        }
+//        /* Forward remaining prefetched packets */
+//        for (; j < received; j++) {
+//            calculate_hit(pkts_burst[j]);
+//        }
     }
 }
 
@@ -168,7 +176,7 @@ int main(int argc, char **argv) {
     }
 
     for (;;) {
-        printf("%" PRIu64 "\t%" PRIu64 "\n", count, hit);
+        printf("%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n", count, hit, full, n_full);
         rte_delay_ms(1000);
     }
     return 0;

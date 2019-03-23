@@ -100,9 +100,9 @@ static int main_loop(__rte_unused void *dummy) {
         received = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
         count += received;
 	if (likely(received > 0)) {
-            rte_delay_ms(1000);
-            if (received < MAX_PKT_BURST) n_full++;
-            else full++;
+//            rte_delay_ms(1000);
+//            if (received < MAX_PKT_BURST) n_full++;
+//            else full++;
             while (likely(received > 0)) {
                 rte_pktmbuf_free(pkts_burst[--received]);
             }

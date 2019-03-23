@@ -89,31 +89,31 @@ static void fill_hdr(uint64_t port, struct ether_hdr *hdr) {
 }
 
 
-struct rte_ring *ring_rcv_pro, *ring_pro_send;
-static volatile uint64_t received = 0, to_pro = 0, from_rcv = 0, hit = 0, to_send = 0, from_pro = 0, sent = 0, drain = 0;
+struct rte_ring *ring_pro_send;
+static volatile uint64_t received = 0, hit = 0, to_send = 0, from_pro = 0, sent = 0, drain = 0;
 
-__attribute__ ((noreturn))
-static int main_loop_receive(__rte_unused void *dummy) {
-    struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
-    uint16_t nb_rcv, nb_sent;
-
-    printf("lcore: %u, receive\n", rte_lcore_id());
-    for (;;) {
-        nb_rcv = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
-        received += nb_rcv;
-
-        //        while (unlikely(nb_rcv > 0)) {
-        //            rte_pktmbuf_free(pkts_burst[--nb_rcv]);
-        //        }
-
-        nb_sent = rte_ring_enqueue_burst(ring_rcv_pro, (void **) pkts_burst, nb_rcv, NULL);
-        to_pro += nb_sent;
-
-        while (unlikely(nb_sent < nb_rcv)) {
-            rte_pktmbuf_free(pkts_burst[nb_sent++]);
-        }
-    }
-}
+//__attribute__ ((noreturn))
+//static int main_loop_receive(__rte_unused void *dummy) {
+//    struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
+//    uint16_t nb_rcv, nb_sent;
+//
+//    printf("lcore: %u, receive\n", rte_lcore_id());
+//    for (;;) {
+//        nb_rcv = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
+//        received += nb_rcv;
+//
+//        //        while (unlikely(nb_rcv > 0)) {
+//        //            rte_pktmbuf_free(pkts_burst[--nb_rcv]);
+//        //        }
+//
+//        nb_sent = rte_ring_enqueue_burst(ring_rcv_pro, (void **) pkts_burst, nb_rcv, NULL);
+//        to_pro += nb_sent;
+//
+//        while (unlikely(nb_sent < nb_rcv)) {
+//            rte_pktmbuf_free(pkts_burst[nb_sent++]);
+//        }
+//    }
+//}
 
 static int hanoi(int from, int to, int level) {
     if (level == 0) return 0;
@@ -129,7 +129,8 @@ static __rte_always_inline void process_packet(struct rte_mbuf *pkt, const struc
 
         //        to_send[pkt_count++] = pkt;
         rte_memcpy(hdr, ether_template, sizeof (struct ether_hdr));
-        hanoi(0, 2, 7);
+                hanoi(0, 2, 7);
+//        rte_delay_us(1);
         ret = rte_ring_enqueue(ring_pro_send, pkt);
         if (likely(ret == 0)) {
             to_send++;
@@ -143,24 +144,23 @@ static __rte_always_inline void process_packet(struct rte_mbuf *pkt, const struc
         //    } else {
         //        rte_pktmbuf_free(pkt);
     }
-    //    rte_delay_us(1);
 }
 
 __attribute__ ((noreturn))
-static int main_loop_process(__rte_unused void *dummy) {
+static int main_loop_receive_process(__rte_unused void *dummy) {
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
     uint16_t nb_rcv, nb_sent, j;
     struct ether_hdr ether_template;
 
     fill_hdr(0, &ether_template);
 
-    printf("lcore: %u, process", rte_lcore_id());
+    printf("lcore: %u, receive & process", rte_lcore_id());
     print_ethaddr(", mac=", &ether_template.s_addr);
     printf("\n");
 
     for (;;) {
-        nb_rcv = rte_ring_dequeue_burst(ring_rcv_pro, (void *) pkts_burst, MAX_PKT_BURST, NULL);
-        from_rcv += nb_rcv;
+        nb_rcv = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
+        received += nb_rcv;
 
         for (j = 0; j < PREFETCH_OFFSET && j < nb_rcv; j++) {
             rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
@@ -253,9 +253,6 @@ int main(int argc, char **argv) {
     packet_pool = rte_pktmbuf_pool_create("packet_pool", NB_PKT_MBUF, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
     if (!unlikely(packet_pool)) rte_exit(EXIT_FAILURE, "Cannot init packet mbuf pool.\n");
 
-    ring_rcv_pro = rte_ring_create("rcv_pro", PIPELINE_MSGQ_SIZE, rte_socket_id(), RING_F_SP_ENQ | RING_F_SC_DEQ);
-    if (!unlikely(ring_rcv_pro)) rte_exit(EXIT_FAILURE, "Cannot create ring for rcv_pro.\n");
-
     ring_pro_send = rte_ring_create("pro_send", PIPELINE_MSGQ_SIZE, rte_socket_id(), RING_F_SP_ENQ | RING_F_SC_DEQ);
     if (!unlikely(ring_pro_send)) rte_exit(EXIT_FAILURE, "Cannot create ring for pro_send.\n");
 
@@ -274,13 +271,8 @@ int main(int argc, char **argv) {
 
     lcore = rte_get_next_lcore(-1, 1, 0);
     if (unlikely(lcore == RTE_MAX_LCORE)) rte_exit(EXIT_FAILURE, "Require at least 4 cores.\n");
-    rte_eal_remote_launch(main_loop_receive, NULL, lcore);
+    rte_eal_remote_launch(main_loop_receive_process, NULL, lcore);
 
-
-    lcore = rte_get_next_lcore(lcore, 1, 0);
-    if (unlikely(lcore == RTE_MAX_LCORE)) rte_exit(EXIT_FAILURE, "Require at least 4 cores.\n");
-    rte_eal_remote_launch(main_loop_process, NULL, lcore);
-    //    rte_eal_remote_launch(main_loop_waste, NULL, lcore);
 
     lcore = rte_get_next_lcore(lcore, 1, 0);
     if (unlikely(lcore == RTE_MAX_LCORE)) rte_exit(EXIT_FAILURE, "Require at least 4 cores.\n");
@@ -288,15 +280,15 @@ int main(int argc, char **argv) {
     //    rte_eal_remote_launch(main_loop_waste, NULL, lcore);
 
     //
-    //    for (;;) {
-    //        lcore = rte_get_next_lcore(lcore, 1, 0);
-    //        if (lcore == RTE_MAX_LCORE) break;
-    //        rte_eal_remote_launch(main_loop_waste, NULL, lcore);
-    //    }
-    //
-    printf("Received\tToPro\tFromRcv\tHit\tToSend\tFromPro\tSent\tDrain\n");
     for (;;) {
-        printf("%" PRIu64"\t%" PRIu64"\t%" PRIu64 "\t%" PRIu64"\t%" PRIu64"\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n", received, to_pro, from_rcv, hit, to_send, from_pro, sent, drain);
+        lcore = rte_get_next_lcore(lcore, 1, 0);
+        if (lcore == RTE_MAX_LCORE) break;
+        rte_eal_remote_launch(main_loop_waste, NULL, lcore);
+    }
+    //
+    printf("Received\tHit\tToSend\tFromPro\tSent\tDrain\n");
+    for (;;) {
+        printf("%" PRIu64"\t%" PRIu64"\t%" PRIu64"\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n", received, hit, to_send, from_pro, sent, drain);
         rte_delay_ms(1000);
     }
     return 0;

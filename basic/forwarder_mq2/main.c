@@ -28,10 +28,12 @@ static struct rte_mempool *packet_pool;
 static struct ether_addr dst_addr;
 static uint16_t ether_type;
 struct ether_hdr *hdr_template;
+static unsigned long int hanoi_level = 0;
 
 static void print_usage(char *prgname) {
-    printf("usage: %s %s -- -d %s [-t %s]\n", prgname,
-            "%dpdk_params%", "%dst_mac_as_hex%", "%ether_type%");
+    printf("usage: %s %s -- -d %s -h %s [-t %s]\n", prgname,
+            "%dpdk_params%", "%dst_mac_as_hex%", "%hanoi_level%", "%ether_type%");
+    printf("\thanoi_level should be between [1, 15]");
 }
 
 static int parse_args(int argc, char **argv) {
@@ -48,7 +50,7 @@ static int parse_args(int argc, char **argv) {
     ether_type = rte_cpu_to_be_16(DEFAULT_ETH_TYPE);
 
 
-    while ((opt = getopt(argc, argvopt, "d:t:")) != EOF) {
+    while ((opt = getopt(argc, argvopt, "d:t:h:")) != EOF) {
         switch (opt) {
             case 'd':
                 end = NULL;
@@ -67,6 +69,14 @@ static int parse_args(int argc, char **argv) {
                     return -1;
                 }
                 break;
+            case 'h':
+                end = NULL;
+                hanoi_level = strtoul(optarg, &end, 0);
+                if (optarg[0] == '\0' || (end == NULL) || (*end != '\0')) {
+                    print_usage(argv[0]);
+                    return -1;
+                }
+                break;
             default:
                 print_usage(argv[0]);
                 return -1;
@@ -77,8 +87,12 @@ static int parse_args(int argc, char **argv) {
         print_usage(argv[0]);
         return -1;
     }
+    if (hanoi_level < 1 || hanoi_level > 15) {
+        print_usage(argv[0]);
+        return -1;
+    }
     print_ethaddr("SRC_ADDR=", &dst_addr);
-    printf(", ether_type=0x%04" PRIx16 "\n", rte_be_to_cpu_16(ether_type));
+    printf(", ether_type=0x%04" PRIx16 ", hanoi_level=%lu\n", rte_be_to_cpu_16(ether_type), hanoi_level);
 
     return 0;
 }
@@ -130,7 +144,7 @@ static __rte_always_inline void process_packet(struct rte_mbuf *pkt, const struc
 
         //        to_send[pkt_count++] = pkt;
         rte_memcpy(hdr, ether_template, sizeof (struct ether_hdr));
-        hanoi(0, 2, 3);
+        hanoi(0, 2, hanoi_level);
         //        rte_delay_us(1);
         ret = rte_ring_enqueue(ring_pro_send, pkt);
         if (likely(ret == 0)) {
@@ -152,7 +166,7 @@ static uint64_t receive_counts[MAX_PKT_BURST + 1];
 __attribute__ ((noreturn))
 static int main_loop_receive_process(__rte_unused void *dummy) {
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
-    uint16_t nb_rcv, nb_sent, j;
+    uint16_t nb_rcv, j;
     struct ether_hdr ether_template;
 
     fill_hdr(0, &ether_template);
@@ -162,7 +176,7 @@ static int main_loop_receive_process(__rte_unused void *dummy) {
     printf("\n");
 
     for (;;) {
-//        rte_delay_ms(1);
+        //        rte_delay_ms(1);
         nb_rcv = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
         received += nb_rcv;
         receive_counts[nb_rcv]++;

@@ -9,6 +9,7 @@
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_mempool.h>
+#include <cmdline_parse_etheraddr.h>
 #include "helper.h"
 
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
@@ -37,26 +38,18 @@ static int parse_args(int argc, char **argv) {
     int opt;
     char **argvopt = argv;
 
-    union {
-        uint64_t as_long;
-        struct ether_addr as_addr;
-    } tmp_dst_mac;
     char *end;
+    bool has_destination = false;
 
-    tmp_dst_mac.as_long = 0;
     ether_type = rte_cpu_to_be_16(DEFAULT_ETH_TYPE);
 
 
     while ((opt = getopt(argc, argvopt, "d:t:s:c:r")) != EOF) {
         switch (opt) {
             case 'd':
-                end = NULL;
-                tmp_dst_mac.as_long = rte_cpu_to_be_64(strtoull(optarg, &end, 16)) >> 16;
-                if (optarg[0] == '\0' || (end == NULL) || (*end != '\0')) {
-                    print_usage(argv[0]);
-                    return -1;
-                }
-                dst_addr = tmp_dst_mac.as_addr;
+                if (cmdline_parse_etheraddr(NULL, optarg, dst_addr.addr_bytes, sizeof (dst_addr.addr_bytes)) < 0)
+                    rte_exit(EXIT_FAILURE, "Invalid ethernet address: %s\n", optarg);
+                has_destination = true;
                 break;
             case 't':
                 end = NULL;
@@ -91,7 +84,7 @@ static int parse_args(int argc, char **argv) {
         }
     }
 
-    if (!tmp_dst_mac.as_long) {
+    if (!has_destination) {
         print_usage(argv[0]);
         return -1;
     }

@@ -23,8 +23,8 @@ static const struct rte_eth_conf port_conf = {
         //        .offloads = 0,
     },
 };
-#define RTE_TEST_RX_DESC_DEFAULT 1024
-#define RTE_TEST_TX_DESC_DEFAULT 1024
+#define RTE_TEST_RX_DESC_DEFAULT 4096
+#define RTE_TEST_TX_DESC_DEFAULT 4096
 
 
 

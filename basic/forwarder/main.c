@@ -11,6 +11,7 @@
 #include <rte_mempool.h>
 #include <rte_prefetch.h>
 #include "helper.h"
+#include <cmdline_parse_etheraddr.h>
 
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define NB_PKT_MBUF 8192
@@ -37,26 +38,18 @@ static int parse_args(int argc, char **argv) {
     int opt;
     char **argvopt = argv;
 
-    union {
-        uint64_t as_long;
-        struct ether_addr as_addr;
-    } tmp_dst_mac;
     char *end;
+    bool has_destination = false;
 
-    tmp_dst_mac.as_long = 0;
     ether_type = rte_cpu_to_be_16(DEFAULT_ETH_TYPE);
 
 
     while ((opt = getopt(argc, argvopt, "d:t:")) != EOF) {
         switch (opt) {
             case 'd':
-                end = NULL;
-                tmp_dst_mac.as_long = rte_cpu_to_be_64(strtoull(optarg, &end, 16)) >> 16;
-                if (optarg[0] == '\0' || (end == NULL) || (*end != '\0')) {
-                    print_usage(argv[0]);
-                    return -1;
-                }
-                dst_addr = tmp_dst_mac.as_addr;
+                if (cmdline_parse_etheraddr(NULL, optarg, dst_addr.addr_bytes, sizeof (dst_addr.addr_bytes)) < 0)
+                    rte_exit(EXIT_FAILURE, "Invalid ethernet address: %s\n", optarg);
+                has_destination = true;
                 break;
             case 't':
                 end = NULL;
@@ -72,11 +65,11 @@ static int parse_args(int argc, char **argv) {
         }
     }
 
-    if (!tmp_dst_mac.as_long) {
+    if (!has_destination) {
         print_usage(argv[0]);
         return -1;
     }
-    print_ethaddr("SRC_ADDR=", &dst_addr);
+    print_ethaddr("DST_ADDR=", &dst_addr);
     printf(", ether_type=0x%04" PRIx16 "\n", rte_be_to_cpu_16(ether_type));
 
     return 0;
@@ -143,7 +136,7 @@ static void fill_hdr(uint64_t port, struct ether_hdr *hdr) {
 __attribute__ ((noreturn))
 static int main_loop(__rte_unused void *dummy) {
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
-    uint16_t nb_burst, j, nb_burst_send;
+    uint16_t nb_burst, j;
 
     hdr_template = (struct ether_hdr *) rte_malloc("ether_hdr", sizeof (struct ether_hdr), 0);
     if (unlikely(!hdr_template)) rte_exit(EXIT_FAILURE, "Cannot allocate hdr_template.\n");

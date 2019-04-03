@@ -10,6 +10,7 @@
 #include <rte_mbuf.h>
 #include <rte_mempool.h>
 #include <rte_prefetch.h>
+#include <cmdline_parse_etheraddr.h>
 #include "helper.h"
 
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
@@ -35,26 +36,18 @@ static int parse_args(int argc, char **argv) {
     int opt;
     char **argvopt = argv;
 
-    union {
-        uint64_t as_long;
-        struct ether_addr as_addr;
-    } tmp_dst_mac;
+    bool has_source = false;
     char *end;
 
-    tmp_dst_mac.as_long = 0;
     ether_type = rte_cpu_to_be_16(DEFAULT_ETH_TYPE);
 
 
     while ((opt = getopt(argc, argvopt, "s:t:")) != EOF) {
         switch (opt) {
             case 's':
-                end = NULL;
-                tmp_dst_mac.as_long = rte_cpu_to_be_64(strtoull(optarg, &end, 16)) >> 16;
-                if (optarg[0] == '\0' || (end == NULL) || (*end != '\0')) {
-                    print_usage(argv[0]);
-                    return -1;
-                }
-                src_addr = tmp_dst_mac.as_addr;
+                if (cmdline_parse_etheraddr(NULL, optarg, src_addr.addr_bytes, sizeof (src_addr.addr_bytes)) < 0)
+                    rte_exit(EXIT_FAILURE, "Invalid ethernet address: %s\n", optarg);
+                has_source = true;
                 break;
             case 't':
                 end = NULL;
@@ -70,7 +63,7 @@ static int parse_args(int argc, char **argv) {
         }
     }
 
-    if (!tmp_dst_mac.as_long) {
+    if (!has_source) {
         print_usage(argv[0]);
         return -1;
     }
@@ -91,7 +84,7 @@ static int parse_args(int argc, char **argv) {
 __attribute__ ((noreturn))
 static int main_loop(__rte_unused void *dummy) {
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
-    uint16_t received, j;
+    uint16_t received;
 
     printf("lcore=%u, port=%" PRIu16 ", rte_socket_id=%u\n", rte_lcore_id(), 0, rte_socket_id());
 

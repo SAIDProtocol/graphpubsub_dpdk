@@ -126,6 +126,7 @@ test_header_lsa(void) {
 
 static void
 test_headers(void) {
+    test_header_lsa();
     printf("======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
     printf("gps_pkt_application size: %zd\n", sizeof (struct gps_pkt_application));
     printf("gps_pkt_publication size: %zd\n", sizeof (struct gps_pkt_publication));
@@ -147,7 +148,6 @@ main(int argc, char **argv) {
 
     test_guid();
     test_na();
-    test_header_lsa();
     test_headers();
 
     return 0;

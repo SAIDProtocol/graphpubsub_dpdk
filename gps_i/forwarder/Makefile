@@ -3,7 +3,7 @@
 #
 
 # binary name
-APP = gps_forwarder
+APP = gps_i_forwarder
 
 # all source are stored in SRCS-y
 SRCS-y := main.c

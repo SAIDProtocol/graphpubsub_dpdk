@@ -15,7 +15,7 @@
 extern "C" {
 #endif
 
-    struct gps_anno {
+    struct gps_i_anno {
         uint32_t size;
     } __rte_aligned(RTE_MBUF_PRIV_ALIGN);
 

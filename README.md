@@ -43,7 +43,7 @@ Test functions on rte_hash.
 **Issue found with the setting:** When performing rte_hash_free_key_with_position(hash, i) (uses RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF), the code frees hash at position (i-1).  
 Therefore, it cannot be used with RCU. RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY would be preferred. Can create another array that stores the values. Perform RCU on the value array then.
 
-## gps
+## gps_i
 Graph pub/sub implemented in the information-layer. The network-layer performs unicast and multicast.  
 
 * **include**  
@@ -62,9 +62,9 @@ Application packet generator.
 * **test**  
 Test functions.
 
-## gps_er
+## gps_n
 Graph pub/sub, expanded on each router (in the network-layer).  
 
-## hierarchical_er
+## hierarchical_n
 Implementation similar to NDN (hierarchical namespace), expanded on each router (in the network-layer).  
 

@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
     /** Size of GUID, 8-20 bytes preferred, better align to 4 bytes. */
-#define GPS_GUID_SIZE 20
+#define GPS_GUID_SIZE 12
 
 #if GPS_GUID_SIZE == 20
 #define GPS_GUID_FMT_SIZE (45)

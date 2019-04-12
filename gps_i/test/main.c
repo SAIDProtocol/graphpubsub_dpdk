@@ -5,8 +5,9 @@
  * Created on April 11, 2019, 4:43 PM
  */
 
-#include <gps_na.h>
+#include <gps_headers.h>
 #include <gps_guid.h>
+#include <gps_na.h>
 #include <rte_common.h>
 #include <rte_eal.h>
 #include <rte_ether.h>
@@ -72,6 +73,20 @@ test_na(void) {
     printf("\tjhash NA1 %" PRIu32 "\n", rte_jhash(&na1, sizeof(na1), 0));
 }
 
+static void
+test_headers(void) {
+    
+    printf("======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
+    printf("gps_pkt_common size: %zd\n", sizeof (struct gps_pkt_common));
+    printf("gps_pkt_lsa size: %zd\n", sizeof (struct gps_pkt_lsa));
+    printf("gps_pkt_application size: %zd\n", sizeof (struct gps_pkt_application));
+    printf("gps_pkt_publication size: %zd\n", sizeof (struct gps_pkt_publication));
+    printf("gps_pkt_subscription size: %zd\n", sizeof (struct gps_pkt_subscription));
+    printf("gps_pkt_gnrs_request size: %zd\n", sizeof (struct gps_pkt_gnrs_request));
+    printf("gps_pkt_gnrs_response size: %zd\n", sizeof (struct gps_pkt_gnrs_response));
+    printf("gps_packet_gnrs_association size: %zd\n", sizeof (struct gps_packet_gnrs_association));
+}
+
 int
 main(int argc, char **argv) {
     int ret;
@@ -84,6 +99,7 @@ main(int argc, char **argv) {
 
     test_guid();
     test_na();
+    test_headers();
 
     return 0;
 }

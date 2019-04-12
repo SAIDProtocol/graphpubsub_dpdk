@@ -82,7 +82,7 @@ extern "C" {
         // premable.src_na -> src NA
         // premable.dst_na -> gnrs NA (dst)
         struct gps_pkt_application premable;
-        uint8_t fromEndhost:1;
+        uint8_t fromEndhost;
     } __rte_packed;
 
 

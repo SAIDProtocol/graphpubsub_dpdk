@@ -3,7 +3,7 @@
 #
 
 # binary name
-APP = test
+APP = gps_test
 
 # all source are stored in SRCS-y
 SRCS-y := main.c

@@ -62,9 +62,9 @@ Application packet generator.
 * **test**  
 Test functions.
 
-## gpser
-Graph pub/sub expanded on each router  
+## gps_er
+Graph pub/sub, expanded on each router (in the network-layer).  
 
-## hierarchicaler
-Implementation similar to NDN (hierarchical)  
+## hierarchical_er
+Implementation similar to NDN (hierarchical namespace), expanded on each router (in the network-layer).  
 

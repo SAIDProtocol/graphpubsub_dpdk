@@ -3,7 +3,7 @@
 #
 
 # binary name
-APP = graphpubsub_information_forwarder
+APP = gps_forwarder
 
 # all source are stored in SRCS-y
 SRCS-y := main.c

@@ -14,7 +14,6 @@
 #define DEFAULT_WRAP 16
 
 extern void print_buf(const void *buf, uint32_t size, uint32_t wrap);
-
 void test_headers(void);
 
 static void

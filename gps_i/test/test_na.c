@@ -10,7 +10,6 @@
 #include <rte_jhash.h>
 
 extern void print_buf(const void *buf, uint32_t size, uint32_t wrap);
-
 void test_na(void);
 
 void

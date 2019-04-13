@@ -19,7 +19,7 @@ test_na(void) {
     char content[] = {0xde, 0xad, 0xbe, 0xef};
     rte_memcpy(&na2.value, content, sizeof (struct gps_na));
 
-    printf("======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
+    printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
     printf("gps_na size: %zd\n", sizeof (struct gps_na));
 
     gps_na_clear(&na1);

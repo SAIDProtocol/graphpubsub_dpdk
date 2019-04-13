@@ -101,12 +101,53 @@ test_header_publication(void) {
     rte_free(publication);
 }
 
+static void
+test_header_subscription(void) {
+    printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
+    printf("gps_pkt_subscription size: %zd\n", sizeof (struct gps_pkt_subscription));
+
+    struct gps_pkt_subscription sub;
+
+    struct gps_guid src_guid, dst_guid;
+    struct gps_na src_na, dst_na;
+    char src_guid_content[] = {
+        0x12, 0x34, 0x56, 0x78,
+        0x90, 0xab, 0xcd, 0xef,
+        0xfe, 0xdc, 0xba, 0x09,
+        0x87, 0x65, 0x43, 0x21,
+        0xde, 0xad, 0xbe, 0xef
+    };
+    char dst_guid_content[] = {
+        0x1f, 0xed, 0xcb, 0xa0,
+        0x98, 0x76, 0x54, 0x32,
+        0x23, 0x45, 0x67, 0x89,
+        0x0a, 0xbc, 0xde, 0xf1,
+        0xda, 0xed, 0xfe, 0xeb
+    };
+    char buf_print[1024];
+
+
+    rte_memcpy(src_guid.content, src_guid_content, GPS_GUID_SIZE);
+    rte_memcpy(dst_guid.content, dst_guid_content, GPS_GUID_SIZE);
+
+    gps_na_set(&src_na, 0x567890ab);
+    gps_na_set(&dst_na, 0x7890abcd);
+
+    gps_pkt_subscription_init(&sub, &src_guid, &dst_guid, &src_na, &dst_na, true);
+    printf("pkt=%s\n", gps_pkt_subscription_format(buf_print, sizeof(buf_print), &sub));
+    print_buf(&sub, sizeof(sub), 16);
+
+    gps_pkt_subscription_set_subscribe(&sub, false);
+    printf("pkt=%s\n", gps_pkt_subscription_format(buf_print, sizeof(buf_print), &sub));
+    print_buf(&sub, sizeof(sub), 16);
+}
+
 void
 test_headers(void) {
     test_header_lsa();
     test_header_publication();
+    test_header_subscription();
     printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
-    printf("gps_pkt_subscription size: %zd\n", sizeof (struct gps_pkt_subscription));
     printf("gps_pkt_gnrs_request size: %zd\n", sizeof (struct gps_pkt_gnrs_request));
     printf("gps_pkt_gnrs_response size: %zd\n", sizeof (struct gps_pkt_gnrs_response));
     printf("gps_packet_gnrs_association size: %zd\n", sizeof (struct gps_packet_gnrs_association));

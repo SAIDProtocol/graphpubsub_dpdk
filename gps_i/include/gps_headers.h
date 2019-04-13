@@ -29,7 +29,7 @@ extern "C" {
 
 #define GPS_PKT_TYPE_LSA 0x01
 #define GPS_PKT_TYPE_PUBLICATION 0x81
-#define GPS_PKT_TYPE_SUBSCRIBE 0x82
+#define GPS_PKT_TYPE_SUBSCRIPTION 0x82
 #define GPS_PKT_TYPE_GNRS_REQ 0xc1
 #define GPS_PKT_TYPE_GNRS_RESP 0xc2
 #define GPS_PKT_TYPE_GNRS_ASSO 0xc3
@@ -249,7 +249,7 @@ extern "C" {
     }
 
     static __rte_always_inline uint8_t *
-    gps_pkt_application_get_payload(void *pkt) {
+    gps_pkt_publication_get_payload(void *pkt) {
         return ((struct gps_pkt_publication *) pkt)->payload;
     }
 
@@ -309,6 +309,103 @@ extern "C" {
         struct gps_pkt_application premable;
         uint8_t subscribe;
     } __rte_packed;
+
+    static __rte_always_inline const struct gps_guid *
+    gps_pkt_subscription_const_get_src_guid(const void *pkt) {
+        return gps_pkt_application_const_get_src_guid(pkt);
+    }
+
+    static __rte_always_inline const struct gps_guid *
+    gps_pkt_subscription_const_get_dst_guid(const void *pkt) {
+        return gps_pkt_application_const_get_dst_guid(pkt);
+    }
+
+    static __rte_always_inline const struct gps_na *
+    gps_pkt_subscription_const_get_src_na(const void *pkt) {
+        return gps_pkt_application_const_get_src_na(pkt);
+    }
+
+    static __rte_always_inline const struct gps_na *
+    gps_pkt_subscription_const_get_dst_na(const void *pkt) {
+        return gps_pkt_application_const_get_dst_na(pkt);
+    }
+
+    static __rte_always_inline bool
+    gps_pkt_subscription_const_is_subscribe(const void *pkt) {
+        return ((const struct gps_pkt_subscription *) pkt)->subscribe != 0;
+    }
+
+    static __rte_always_inline struct gps_guid *
+    gps_pkt_subscription_get_src_guid(void *pkt) {
+        return gps_pkt_application_get_src_guid(pkt);
+    }
+
+    static __rte_always_inline struct gps_guid *
+    gps_pkt_subscription_get_dst_guid(void *pkt) {
+        return gps_pkt_application_get_dst_guid(pkt);
+    }
+
+    static __rte_always_inline struct gps_na *
+    gps_pkt_subscription_get_src_na(void *pkt) {
+        return gps_pkt_application_get_src_na(pkt);
+    }
+
+    static __rte_always_inline const struct gps_na *
+    gps_pkt_subscription_get_dst_na(void *pkt) {
+        return gps_pkt_application_get_dst_na(pkt);
+    }
+
+    static __rte_always_inline void
+    gps_pkt_subscription_set_src_guid(void *pkt, const struct gps_guid *src_guid) {
+        gps_pkt_application_set_src_guid(pkt, src_guid);
+    }
+
+    static __rte_always_inline void
+    gps_pkt_subscription_set_dst_guid(void *pkt, const struct gps_guid *dst_guid) {
+        gps_pkt_application_set_dst_guid(pkt, dst_guid);
+    }
+
+    static __rte_always_inline void
+    gps_pkt_subscription_set_src_na(void *pkt, const struct gps_na *src_na) {
+        gps_pkt_application_set_src_na(pkt, src_na);
+    }
+
+    static __rte_always_inline void
+    gps_pkt_subscription_set_dst_na(void *pkt, const struct gps_na *dst_na) {
+        gps_pkt_application_set_dst_na(pkt, dst_na);
+    }
+
+    static __rte_always_inline void
+    gps_pkt_subscription_set_subscribe(void *pkt, bool subscribe) {
+        ((struct gps_pkt_subscription *) pkt)->subscribe = subscribe ? 1 : 0;
+    }
+
+    static __rte_always_inline void
+    gps_pkt_subscription_init(void *pkt,
+            const struct gps_guid *src_guid, const struct gps_guid *dst_guid,
+            const struct gps_na *src_na, const struct gps_na *dst_na,
+            bool subscribe) {
+        gps_pkt_set_type(pkt, GPS_PKT_TYPE_SUBSCRIPTION);
+        gps_pkt_subscription_set_src_guid(pkt, src_guid);
+        gps_pkt_subscription_set_dst_guid(pkt, dst_guid);
+        gps_pkt_subscription_set_src_na(pkt, src_na);
+        gps_pkt_subscription_set_dst_na(pkt, dst_na);
+        gps_pkt_subscription_set_subscribe(pkt, subscribe);
+    }
+
+    static __rte_always_inline char *
+    gps_pkt_subscription_format(char *buf, uint32_t size, const void *pkt) {
+        char buf_src_na[GPS_NA_FMT_SIZE], buf_dst_na[GPS_NA_FMT_SIZE],
+                buf_src_guid[GPS_GUID_FMT_SIZE], buf_dst_guid[GPS_GUID_FMT_SIZE];
+        RTE_ASSERT(gps_pkt_get_type(pkt) == GPS_PKT_TYPE_SUBSCRIPTION);
+        snprintf(buf, size, "SUB{src_guid=%s,dst_guid=%s,src_na=%s,dst_na=%s,sub=%s}",
+                gps_guid_format(buf_src_guid, GPS_GUID_FMT_SIZE, gps_pkt_subscription_const_get_src_guid(pkt)),
+                gps_guid_format(buf_dst_guid, GPS_GUID_FMT_SIZE, gps_pkt_subscription_const_get_dst_guid(pkt)),
+                gps_na_format(buf_src_na, GPS_NA_FMT_SIZE, gps_pkt_subscription_const_get_src_na(pkt)),
+                gps_na_format(buf_dst_na, GPS_NA_FMT_SIZE, gps_pkt_subscription_const_get_dst_na(pkt)),
+                gps_pkt_subscription_const_is_subscribe(pkt) ? "TRUE" : "FALSE");
+        return buf;
+    }
 
     struct gps_pkt_gnrs_request {
         // premable.src_guid -> empty

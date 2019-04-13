@@ -1,5 +1,5 @@
 /* 
- * File:   test_guid.c
+ * File:   test_headers.c
  * Author: Jiachen Chen
  *
  * Created on April 12, 2019, 5:57 PM
@@ -93,7 +93,7 @@ test_header_publication(void) {
     }
 
     gps_pkt_publication_init(publication, &src_guid, &dst_guid, &src_na, &dst_na, size);
-    printf("pkt=%s\n", gps_pkt_publication_format(buf_print, sizeof(buf_print), publication));
+    printf("pkt=%s\n", gps_pkt_publication_format(buf_print, sizeof (buf_print), publication));
 
     print_buf(publication, buf_size, 16);
 
@@ -134,12 +134,12 @@ test_header_subscription(void) {
     gps_na_set(&dst_na, 0x7890abcd);
 
     gps_pkt_subscription_init(&sub, &src_guid, &dst_guid, &src_na, &dst_na, true);
-    printf("pkt=%s\n", gps_pkt_subscription_format(buf_print, sizeof(buf_print), &sub));
-    print_buf(&sub, sizeof(sub), 16);
+    printf("pkt=%s\n", gps_pkt_subscription_format(buf_print, sizeof (buf_print), &sub));
+    print_buf(&sub, sizeof (sub), 16);
 
     gps_pkt_subscription_set_subscribe(&sub, false);
-    printf("pkt=%s\n", gps_pkt_subscription_format(buf_print, sizeof(buf_print), &sub));
-    print_buf(&sub, sizeof(sub), 16);
+    printf("pkt=%s\n", gps_pkt_subscription_format(buf_print, sizeof (buf_print), &sub));
+    print_buf(&sub, sizeof (sub), 16);
 }
 
 void

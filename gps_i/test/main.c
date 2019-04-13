@@ -7,11 +7,17 @@
 
 #include <rte_common.h>
 #include <rte_eal.h>
+#include <rte_mbuf.h>
+#include "../forwarder/gps_i_anno.h"
+
 
 extern void test_guid(void);
 extern void test_na(void);
 extern void test_headers(void);
+extern void test_anno(void);
 void print_buf(const void *buf, uint32_t size, uint32_t wrap);
+
+
 
 int
 main(int argc, char **argv) {
@@ -26,6 +32,7 @@ main(int argc, char **argv) {
     test_guid();
     test_na();
     test_headers();
+    test_anno();
 
     return 0;
 }

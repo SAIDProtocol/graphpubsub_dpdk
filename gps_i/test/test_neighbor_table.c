@@ -10,6 +10,9 @@
 #include <rte_lcore.h>
 #include "gps_i_neighbor_table.h"
 
+#define DEFAULT_NEIGHBOR_TABLE_SIZE 1023
+#define DEFAULT_WRAP_SIZE 16
+
 extern void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 void test_neighbor_table(void);
 
@@ -63,10 +66,10 @@ test_neighbor_table_basic(void) {
     int32_t ret;
 
     printf("buf=%s\n", gps_i_neighbor_info_format(info_buf, sizeof (info_buf), &info));
-    print_buf(&info, sizeof (info), 16);
+    print_buf(&info, sizeof (info), DEFAULT_WRAP_SIZE);
 
 
-    gps_i_neighbor_table_init(1023, rte_socket_id());
+    gps_i_neighbor_table_init(DEFAULT_NEIGHBOR_TABLE_SIZE, rte_socket_id());
 
     print_neighbor_table();
 
@@ -150,7 +153,7 @@ test_neighbor_table_basic(void) {
 
 static void test_neighbor_table_rcu(void) {
     printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
-    gps_i_neighbor_table_init(1023, rte_socket_id());
+    gps_i_neighbor_table_init(DEFAULT_NEIGHBOR_TABLE_SIZE, rte_socket_id());
 
     gps_i_neighbor_table_destroy();
 }

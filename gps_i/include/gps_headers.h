@@ -114,7 +114,7 @@ extern "C" {
     }
 
     static __rte_always_inline char *
-    gps_pkt_lsa_format(char *buf, uint32_t size, const void *pkt) {
+    gps_pkt_lsa_format(char *buf, uint16_t size, const void *pkt) {
         char buf_src_na[GPS_NA_FMT_SIZE], buf_intermediate_na[GPS_NA_FMT_SIZE];
         RTE_ASSERT(gps_pkt_get_type(pkt) == GPS_PKT_TYPE_LSA);
         snprintf(buf, size, "LSA{src_na=%s,intermediate_na=%s,nonce=0x%08x}",
@@ -126,10 +126,10 @@ extern "C" {
 
     struct gps_pkt_application {
         struct gps_pkt_common premable;
-        struct gps_guid dst_guid;
+        struct gps_na src_na;
         struct gps_na dst_na;
         struct gps_guid src_guid;
-        struct gps_na src_na;
+        struct gps_guid dst_guid;
     } __rte_packed;
 
     static __rte_always_inline const struct gps_guid *
@@ -292,7 +292,7 @@ extern "C" {
     }
 
     static __rte_always_inline char *
-    gps_pkt_publication_format(char *buf, uint32_t size, const void *pkt) {
+    gps_pkt_publication_format(char *buf, uint16_t size, const void *pkt) {
         char buf_src_na[GPS_NA_FMT_SIZE], buf_dst_na[GPS_NA_FMT_SIZE],
                 buf_src_guid[GPS_GUID_FMT_SIZE], buf_dst_guid[GPS_GUID_FMT_SIZE];
         RTE_ASSERT(gps_pkt_get_type(pkt) == GPS_PKT_TYPE_PUBLICATION);
@@ -394,7 +394,7 @@ extern "C" {
     }
 
     static __rte_always_inline char *
-    gps_pkt_subscription_format(char *buf, uint32_t size, const void *pkt) {
+    gps_pkt_subscription_format(char *buf, uint16_t size, const void *pkt) {
         char buf_src_na[GPS_NA_FMT_SIZE], buf_dst_na[GPS_NA_FMT_SIZE],
                 buf_src_guid[GPS_GUID_FMT_SIZE], buf_dst_guid[GPS_GUID_FMT_SIZE];
         RTE_ASSERT(gps_pkt_get_type(pkt) == GPS_PKT_TYPE_SUBSCRIPTION);

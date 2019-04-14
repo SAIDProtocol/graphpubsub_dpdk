@@ -1,1 +1,3 @@
 build/*
+gps_i_neighbor_table.c
+gps_i_neighbor_table.h

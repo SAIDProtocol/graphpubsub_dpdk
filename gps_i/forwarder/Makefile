@@ -6,7 +6,7 @@
 APP = gps_i_forwarder
 
 # all source are stored in SRCS-y
-SRCS-y := main.c
+SRCS-y := main.c gps_i_neighbor_table.c
 
 # Build using pkg-config variables if possible
 $(shell pkg-config --exists libdpdk)

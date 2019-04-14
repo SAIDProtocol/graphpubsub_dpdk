@@ -6,7 +6,7 @@
 APP = gps_i_test
 
 # all source are stored in SRCS-y
-SRCS-y := main.c test_guid.c test_na.c test_headers.c test_anno.c
+SRCS-y := main.c test_guid.c test_na.c test_headers.c test_anno.c test_neighbor_table.c gps_i_neighbor_table.c
 
 # Build using pkg-config variables if possible
 $(shell pkg-config --exists libdpdk)
@@ -61,3 +61,17 @@ endif
 include $(RTE_SDK)/mk/rte.extapp.mk
 
 endif
+
+all: gps_i_neighbor_table.c gps_i_neighbor_table.h
+
+
+my_clean:
+	$(Q)rm -f gps_i_neighbor_table.c gps_i_neighbor_table.h
+
+clean: my_clean
+
+gps_i_neighbor_table.c: ../forwarder/gps_i_neighbor_table.c
+	$(Q)ln -s ../forwarder/gps_i_neighbor_table.c ./
+
+gps_i_neighbor_table.h: ../forwarder/gps_i_neighbor_table.h
+	$(Q)ln -s ../forwarder/gps_i_neighbor_table.h ./

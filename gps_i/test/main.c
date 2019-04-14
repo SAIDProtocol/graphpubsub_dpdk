@@ -15,6 +15,7 @@ extern void test_guid(void);
 extern void test_na(void);
 extern void test_headers(void);
 extern void test_anno(void);
+extern void test_neighbor_table(void);
 void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 
 
@@ -33,6 +34,7 @@ main(int argc, char **argv) {
     test_na();
     test_headers();
     test_anno();
+    test_neighbor_table();
 
     return 0;
 }

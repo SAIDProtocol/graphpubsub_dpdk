@@ -25,19 +25,22 @@ extern "C" {
         uint32_t value;
     } __rte_packed;
 
-    static __rte_always_inline void
+    static __rte_always_inline struct gps_na *
     gps_na_copy(struct gps_na *dst, const struct gps_na *src) {
         dst->value = src->value;
+        return dst;
     }
 
-    static __rte_always_inline void
+    static __rte_always_inline struct gps_na *
     gps_na_clear(struct gps_na *dst) {
         dst->value = 0;
+        return dst;
     }
 
-    static __rte_always_inline void
+    static __rte_always_inline struct gps_na *
     gps_na_set(struct gps_na *dst, const uint32_t src) {
         dst->value = rte_cpu_to_be_32(src);
+        return dst;
     }
 
     static __rte_always_inline int

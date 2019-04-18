@@ -290,6 +290,8 @@ rte_hash_add_key_with_hash_x(const struct rte_hash_x *h, const void *key, hash_s
  *   Hash table to remove the key from.
  * @param key
  *   Key to remove from the hash table.
+ * @param orig_data
+ *   Output containing a pointer to the original data.
  * @return
  *   - -EINVAL if the parameters are invalid.
  *   - -ENOENT if the key is not found.
@@ -297,8 +299,12 @@ rte_hash_add_key_with_hash_x(const struct rte_hash_x *h, const void *key, hash_s
  *     array of user data. This value is unique for this key, and is the same
  *     value that was returned when the key was added.
  */
+/*
+ * int32_t
+ * rte_hash_del_key_x(const struct rte_hash_x *h, const void *key);
+ */
 int32_t
-rte_hash_del_key_x(const struct rte_hash_x *h, const void *key);
+rte_hash_del_key_x(const struct rte_hash_x *h, const void *key, void **orig_data);
 
 /**
  * Remove a key from an existing hash table.
@@ -321,6 +327,8 @@ rte_hash_del_key_x(const struct rte_hash_x *h, const void *key);
  *   Key to remove from the hash table.
  * @param sig
  *   Precomputed hash value for 'key'.
+ * @param orig_data
+ *   Output containing a pointer to the original data.
  * @return
  *   - -EINVAL if the parameters are invalid.
  *   - -ENOENT if the key is not found.
@@ -328,8 +336,12 @@ rte_hash_del_key_x(const struct rte_hash_x *h, const void *key);
  *     array of user data. This value is unique for this key, and is the same
  *     value that was returned when the key was added.
  */
+/*
+ * int32_t
+ * rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key, hash_sig_t sig);
+ */
 int32_t
-rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key, hash_sig_t sig);
+rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key, void **orig_data, hash_sig_t sig);
 
 /**
  * Find a key in the hash table given the position.
@@ -353,10 +365,30 @@ rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t posit
 			       void **key);
 
 /**
- * @warning
- * @b EXPERIMENTAL: this API may change without prior notice
+ * Find a key and corresponding data in the hash table given the position.
+ * This operation is multi-thread safe with regarding to other lookup threads.
+ * Read-write concurrency can be enabled by setting flag during
+ * table creation.
  *
- * Free a hash key in the hash table given the position
+ * @param h
+ *   Hash table to get the key from.
+ * @param position
+ *   Position returned when the key was inserted.
+ * @param key
+ *   Output containing a pointer to the key
+ * @param data
+ *   Output containing a pointer to the data
+ * @return
+ *   - 0 if retrieved successfully
+ *   - -EINVAL if the parameters are invalid.
+ *   - -ENOENT if no valid key is found in the given position.
+ */
+int
+rte_hash_get_key_data_with_position_x(const struct rte_hash_x *h, const int32_t position,
+			       void **key, void **data);
+
+/**
+ *  * Free a hash key in the hash table given the position
  * of the key. This operation is not multi-thread safe and should
  * only be called from one thread by default. Thread safety
  * can be enabled by setting flag during table creation.
@@ -372,6 +404,8 @@ rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t posit
  *   Hash table to free the key from.
  * @param position
  *   Position returned when the key was deleted.
+ * @param data
+ *   The data stored in the position
  * @return
  *   - 0 if freed successfully
  *   - -EINVAL if the parameters are invalid.
@@ -379,7 +413,7 @@ rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t posit
 //int __rte_experimental
 int
 rte_hash_free_key_with_position_x(const struct rte_hash_x *h,
-				const int32_t position);
+				const int32_t position, void **data);
 
 /**
  * Find a key-value pair in the hash table.
@@ -507,7 +541,36 @@ rte_hash_hash_x(const struct rte_hash_x *h, const void *key);
  */
 int
 rte_hash_lookup_bulk_data_x(const struct rte_hash_x *h, const void **keys,
-		      uint32_t num_keys, uint64_t *hit_mask, void *data[]);
+			uint32_t num_keys, uint64_t *hit_mask, void *data[]);
+
+ /**
+ * Find multiple keys in the hash table.
+ * This operation is multi-thread safe with regarding to other lookup threads.
+ * Read-write concurrency can be enabled by setting flag during
+ * table creation.
+ *
+ * @param h
+ *   Hash table to look in.
+ * @param keys
+ *   A pointer to a list of keys to look for.
+ * @param num_keys
+ *   How many keys are in the keys list (less than RTE_HASH_LOOKUP_BULK_MAX).
+ * @param positions
+ *   Output containing a list of values, corresponding to the list of keys that
+ *   can be used by the caller as an offset into an array of user data. These
+ *   values are unique for each key, and are the same values that were returned
+ *   when each key was added. If a key in the list was not found, then -ENOENT
+ *   will be the value.
+ * @param hit_mask
+ *   Output containing a bitmask with all successful lookups.
+ * @param data
+ *   Output containing array of data returned from all the successful lookups.
+ * @return
+ *   -EINVAL if there's an error, otherwise number of successful lookups.
+ */
+int
+rte_hash_lookup_bulk_data_with_position_x(const struct rte_hash_x *h, const void **keys,
+			uint32_t num_keys, int32_t *positions, uint64_t *hit_mask, void *data[]);
 
 /**
  * Find multiple keys in the hash table.
@@ -528,7 +591,7 @@ rte_hash_lookup_bulk_data_x(const struct rte_hash_x *h, const void **keys,
  *   when each key was added. If a key in the list was not found, then -ENOENT
  *   will be the value.
  * @return
- *   -EINVAL if there's an error, otherwise 0.
+ *   -EINVAL if there's an error, otherwise number of successful lookups.
  */
 int
 rte_hash_lookup_bulk_x(const struct rte_hash_x *h, const void **keys,

@@ -647,6 +647,7 @@ search_and_update_x(const struct rte_hash_x *h, void *data, void **orig_data,
 {
 	int i;
 	struct rte_hash_key_x *k, *keys = h->key_store;
+        void *pdata;
 
 	for (i = 0; i < RTE_HASH_BUCKET_ENTRIES; i++) {
 		/* Need to make sure that the key is not pointing to empty slot */
@@ -664,9 +665,11 @@ search_and_update_x(const struct rte_hash_x *h, void *data, void **orig_data,
 				 * 	data,
 				 *	__ATOMIC_RELEASE);
 				 */
-				*orig_data = __atomic_exchange_n(&k->pdata, 
+				pdata = __atomic_exchange_n(&k->pdata, 
 							data,
 							__ATOMIC_RELEASE);
+				if (orig_data != NULL)
+					*orig_data = pdata;
 				/*
 				 * Return index where key is stored,
 				 * subtracting the first dummy index
@@ -704,7 +707,7 @@ rte_hash_cuckoo_insert_mw_x(const struct rte_hash_x *h,
 	struct rte_hash_bucket_x *cur_bkt;
 	int32_t ret;
 
-        RTE_LOG(DEBUG, HASH, "%d: *orig_data=%p\n", __LINE__, *orig_data);
+//        RTE_LOG(DEBUG, HASH, "%d: *orig_data=%p\n", __LINE__, *orig_data);
 	__hash_rw_writer_lock_x(h);
 	/* Check if key was inserted after last check but before this
 	 * protected region in case of inserting duplicated keys.
@@ -724,7 +727,7 @@ rte_hash_cuckoo_insert_mw_x(const struct rte_hash_x *h,
 			return 1;
 		}
 	}
-        RTE_LOG(DEBUG, HASH, "%d: *orig_data=%p\n", __LINE__, *orig_data);
+//        RTE_LOG(DEBUG, HASH, "%d: *orig_data=%p\n", __LINE__, *orig_data);
 
 	/* Insert new entry if there is room in the primary
 	 * bucket.
@@ -1052,13 +1055,15 @@ __rte_hash_add_key_with_hash_x(const struct rte_hash_x *h, const void *key,
 		data,
 		__ATOMIC_RELEASE);
 	/* The original data is NULL */
-        __atomic_store_n(orig_data, NULL, __ATOMIC_RELEASE);
-        RTE_LOG(DEBUG, HASH, "%d: ret=%d, *orig_data=%p\n", __LINE__, ret, *orig_data);
+        if (orig_data != NULL) 
+            *orig_data = NULL;
+        
+//        RTE_LOG(DEBUG, HASH, "%d: ret=%d, *orig_data=%p\n", __LINE__, ret, *orig_data);
 
 	/* Find an empty slot and insert */
 	ret = rte_hash_cuckoo_insert_mw_x(h, prim_bkt, sec_bkt, key, data, orig_data,
 					short_sig, new_idx, &ret_val);
-        RTE_LOG(DEBUG, HASH, "%d: ret=%d, *orig_data=%p\n", __LINE__, ret, *orig_data);
+//        RTE_LOG(DEBUG, HASH, "%d: ret=%d, *orig_data=%p\n", __LINE__, ret, *orig_data);
 	if (ret == 0)
 		return new_idx - 1;
 	else if (ret == 1) {
@@ -1394,6 +1399,10 @@ rte_hash_lookup_data_x(const struct rte_hash_x *h, const void *key, void **data)
 	return __rte_hash_lookup_with_hash_x(h, key, rte_hash_hash_x(h, key), data);
 }
 
+/*
+ * static inline void
+ * remove_entry_x(const struct rte_hash_x *h, struct rte_hash_bucket_x *bkt, unsigned i)
+ */
 static inline void
 remove_entry_x(const struct rte_hash_x *h, struct rte_hash_bucket_x *bkt, unsigned i)
 {
@@ -1409,6 +1418,7 @@ remove_entry_x(const struct rte_hash_x *h, struct rte_hash_bucket_x *bkt, unsign
 			n_slots = rte_ring_mp_enqueue_burst(h->free_slots,
 						cached_free_slots->objs,
 						LCORE_CACHE_SIZE, NULL);
+                        RETURN_IF_TRUE(n_slots == 0, -EINVAL);
 			cached_free_slots->len -= n_slots;
 		}
 		/* Put index of new free slot in cache. */
@@ -1449,8 +1459,13 @@ __rte_hash_compact_ll_x(struct rte_hash_bucket_x *cur_bkt, int pos) {
  * Writer is expected to hold the lock while calling this
  * function.
  */
+/*
+ * static inline int32_t
+ * search_and_remove_x(const struct rte_hash_x *h, const void *key,
+ * 			struct rte_hash_bucket_x *bkt, uint16_t sig, int *pos)
+ */
 static inline int32_t
-search_and_remove_x(const struct rte_hash_x *h, const void *key,
+search_and_remove_x(const struct rte_hash_x *h, const void *key, void **orig_data,
 			struct rte_hash_bucket_x *bkt, uint16_t sig, int *pos)
 {
 	struct rte_hash_key_x *k, *keys = h->key_store;
@@ -1475,6 +1490,8 @@ search_and_remove_x(const struct rte_hash_x *h, const void *key,
 				__atomic_store_n(&bkt->key_idx[i],
 						 EMPTY_SLOT,
 						 __ATOMIC_RELEASE);
+				if (orig_data != NULL)
+					*orig_data = k->pdata;
 
 				*pos = i;
 				/*
@@ -1488,9 +1505,13 @@ search_and_remove_x(const struct rte_hash_x *h, const void *key,
 	return -1;
 }
 
+/* static inline int32_t
+ * __rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key,
+ * 						hash_sig_t sig)
+ */
 static inline int32_t
 __rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key,
-						hash_sig_t sig)
+						void **orig_data, hash_sig_t sig)
 {
 	uint32_t prim_bucket_idx, sec_bucket_idx;
 	struct rte_hash_bucket_x *prim_bkt, *sec_bkt, *prev_bkt, *last_bkt;
@@ -1506,7 +1527,7 @@ __rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key,
 
 	__hash_rw_writer_lock_x(h);
 	/* look for key in primary bucket */
-	ret = search_and_remove_x(h, key, prim_bkt, short_sig, &pos);
+	ret = search_and_remove_x(h, key, orig_data, prim_bkt, short_sig, &pos);
 	if (ret != -1) {
 		__rte_hash_compact_ll_x(prim_bkt, pos);
 		last_bkt = prim_bkt->next;
@@ -1518,7 +1539,7 @@ __rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key,
 	sec_bkt = &h->buckets[sec_bucket_idx];
 
 	FOR_EACH_BUCKET(cur_bkt, sec_bkt) {
-		ret = search_and_remove_x(h, key, cur_bkt, short_sig, &pos);
+		ret = search_and_remove_x(h, key, orig_data, cur_bkt, short_sig, &pos);
 		if (ret != -1) {
 			__rte_hash_compact_ll_x(cur_bkt, pos);
 			last_bkt = sec_bkt->next;
@@ -1556,19 +1577,28 @@ return_bkt:
 	return ret;
 }
 
+/*
+ * int32_t
+ * rte_hash_del_key_with_hash_x(const struct rte_hash_x *h,
+ * 			const void *key, hash_sig_t sig)
+ */
 int32_t
 rte_hash_del_key_with_hash_x(const struct rte_hash_x *h,
-			const void *key, hash_sig_t sig)
+			const void *key, void **orig_data, hash_sig_t sig)
 {
 	RETURN_IF_TRUE(((h == NULL) || (key == NULL)), -EINVAL);
-	return __rte_hash_del_key_with_hash_x(h, key, sig);
+	return __rte_hash_del_key_with_hash_x(h, key, orig_data, sig);
 }
 
+/*
+ * int32_t
+ * rte_hash_del_key_x(const struct rte_hash_x *h, const void *key)
+ */
 int32_t
-rte_hash_del_key_x(const struct rte_hash_x *h, const void *key)
+rte_hash_del_key_x(const struct rte_hash_x *h, const void *key, void **orig_data)
 {
 	RETURN_IF_TRUE(((h == NULL) || (key == NULL)), -EINVAL);
-	return __rte_hash_del_key_with_hash_x(h, key, rte_hash_hash_x(h, key));
+	return __rte_hash_del_key_with_hash_x(h, key, orig_data, rte_hash_hash_x(h, key));
 }
 
 int
@@ -1591,26 +1621,53 @@ rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t posit
 	return 0;
 }
 
+int
+rte_hash_get_key_data_with_position_x(const struct rte_hash_x *h, const int32_t position,
+			       void **key, void **data)
+{
+	RETURN_IF_TRUE(((h == NULL) || (key == NULL)), -EINVAL);
+
+	struct rte_hash_key_x *k, *keys = h->key_store;
+	k = (struct rte_hash_key_x *) ((char *) keys + (position + 1) *
+				     h->key_entry_size);
+	*key = k->key;
+
+	if (position !=
+	    __rte_hash_lookup_with_hash_x(h, *key, rte_hash_hash_x(h, *key),
+					data)) {
+		return -ENOENT;
+	}
+
+	return 0;
+}
+
 
 int /* __rte_experimental */
 rte_hash_free_key_with_position_x(const struct rte_hash_x *h,
-				const int32_t position)
+				const int32_t position, void **data)
 {
-	RETURN_IF_TRUE(((h == NULL) || ((position + 1) == EMPTY_SLOT)), -EINVAL);
 
 	unsigned int lcore_id, n_slots;
 	struct lcore_cache_x *cached_free_slots;
-	
+	struct rte_hash_key_x *k, *keys = h->key_store;
+        void *pdata;
+        const int32_t real_position = position + 1;
 
+	RETURN_IF_TRUE(((h == NULL) || (real_position == EMPTY_SLOT)), -EINVAL);
 
 	if (h->use_local_cache) {
 		const int32_t total_entries = h->entries + (RTE_MAX_LCORE - 1) *
 					(LCORE_CACHE_SIZE - 1) + 1;
-		RTE_LOG(DEBUG, HASH, "(position + 1)=%" PRIu32 ", total_entries=%" PRIi32 ", h->entries=%" PRIu32 " \n", (position + 1), total_entries, h->entries);
+		RTE_LOG(DEBUG, HASH, "(position + 1)=%" PRIu32 ", total_entries=%" PRIi32 ", h->entries=%" PRIu32 " \n", real_position, total_entries, h->entries);
 		/* Out of bounds */
-		if ((position + 1) >= total_entries)
+		if (real_position >= total_entries)
 			return -EINVAL;
-            
+
+		k = (struct rte_hash_key_x *) ((char *)keys +
+			real_position * h->key_entry_size);
+		pdata = __atomic_load_n(&k->pdata,
+			__ATOMIC_ACQUIRE);
+                
 		lcore_id = rte_lcore_id();
 		cached_free_slots = &h->local_free_slots[lcore_id];
 		/* Cache full, need to free it. */
@@ -1624,17 +1681,24 @@ rte_hash_free_key_with_position_x(const struct rte_hash_x *h,
 		}
 		/* Put index of new free slot in cache. */
 		cached_free_slots->objs[cached_free_slots->len] =
-					(void *)((uintptr_t)(position + 1));
+					(void *)((uintptr_t)real_position);
 		cached_free_slots->len++;
 	} else {
 		const int32_t total_entries = h->entries + 1;
-		RTE_LOG(DEBUG, HASH, "(position + 1)=%" PRIu32 ", total_entries=%" PRIi32 ", h->entries=%" PRIu32 " \n", (position + 1), total_entries, h->entries);
-		if ((position + 1) >= total_entries)
+		RTE_LOG(DEBUG, HASH, "(position + 1)=%" PRIu32 ", total_entries=%" PRIi32 ", h->entries=%" PRIu32 " \n", real_position, total_entries, h->entries);
+		if (real_position >= total_entries)
 			return -EINVAL;
 
+		k = (struct rte_hash_key_x *) ((char *)keys +
+			real_position * h->key_entry_size);
+		pdata = __atomic_load_n(&k->pdata,
+			__ATOMIC_ACQUIRE);
+
 		rte_ring_sp_enqueue(h->free_slots,
-				(void *)((uintptr_t)(position + 1)));
+				(void *)((uintptr_t)real_position));
 	}
+        if (data != NULL) 
+            *data = pdata;
 
 	return 0;
 }
@@ -2109,9 +2173,10 @@ rte_hash_lookup_bulk_x(const struct rte_hash_x *h, const void **keys,
 	RETURN_IF_TRUE(((h == NULL) || (keys == NULL) || (num_keys == 0) ||
 			(num_keys > RTE_HASH_LOOKUP_BULK_MAX) ||
 			(positions == NULL)), -EINVAL);
-
-	__rte_hash_lookup_bulk_x(h, keys, num_keys, positions, NULL, NULL);
-	return 0;
+        uint64_t hit_mask;
+        
+	__rte_hash_lookup_bulk_x(h, keys, num_keys, positions, &hit_mask, NULL);
+	return __builtin_popcountl(hit_mask);
 }
 
 int
@@ -2121,8 +2186,22 @@ rte_hash_lookup_bulk_data_x(const struct rte_hash_x *h, const void **keys,
 	RETURN_IF_TRUE(((h == NULL) || (keys == NULL) || (num_keys == 0) ||
 			(num_keys > RTE_HASH_LOOKUP_BULK_MAX) ||
 			(hit_mask == NULL)), -EINVAL);
+        
+        int32_t positions[num_keys];
 
-	int32_t positions[num_keys];
+	__rte_hash_lookup_bulk_x(h, keys, num_keys, positions, hit_mask, data);
+
+	/* Return number of hits */
+	return __builtin_popcountl(*hit_mask);
+}
+
+int
+rte_hash_lookup_bulk_data_with_position_x(const struct rte_hash_x *h, const void **keys,
+		      uint32_t num_keys, int32_t *positions, uint64_t *hit_mask, void *data[])
+{
+	RETURN_IF_TRUE(((h == NULL) || (keys == NULL) || (num_keys == 0) ||
+			(num_keys > RTE_HASH_LOOKUP_BULK_MAX) ||
+			(hit_mask == NULL)), -EINVAL);
 
 	__rte_hash_lookup_bulk_x(h, keys, num_keys, positions, hit_mask, data);
 

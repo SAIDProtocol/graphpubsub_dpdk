@@ -14,15 +14,78 @@
 #include <stdbool.h>
 
 #define HASH_ENTRIES (16)
-#define TEST_HASH_START (15)
+#define TEST_HASH_START (14)
 #define TEST_HASH_END (16)
 
-static int positions[HASH_ENTRIES + 1];
+#define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy")
+#define _DEBUG(fmt, ...) printf("[%s():%d] " fmt "%.0s\n", __FUNCTION__, __LINE__, __VA_ARGS__);
 
 static uint32_t my_hash_int(const void *key, __rte_unused uint32_t key_len, uint32_t init_val) {
     const uint32_t i_key = *((const uint32_t *) key);
     return (i_key + (i_key << 17)) +init_val;
 }
+
+#define ADD_ENTRY(table, key, val, positions, orig_val_p)                                                           \
+    do {                                                                                                            \
+        positions[key] = rte_hash_add_key_data_x(table, &(key), (void *) (val), (void **) &(orig_val_p));           \
+        DEBUG("Add %" PRIu32 "->0x%" PRIxPTR ": ret=%" PRIi32 ", orig=%p", key, val, positions[key], orig_val_p);   \
+    } while(0)
+
+#define ADD_ENTRY_WO_POSITIONS(table, key, val, position, orig_val_p)                                               \
+    do {                                                                                                            \
+        position = rte_hash_add_key_data_x(table, &(key), (void *) (val), (void **) &(orig_val_p));                 \
+        DEBUG("Add %" PRIu32 "->0x%" PRIxPTR ": ret=%" PRIi32 ", orig=%p", key, val, position, orig_val_p);         \
+    } while(0)
+
+#define ADD_ENTRY_WO_ORIG(table, key, val, positions)                                       \
+    do {                                                                                    \
+        positions[key] = rte_hash_add_key_data_x(table, &(key), (void *) (val), NULL);      \
+        DEBUG("Add %" PRIu32 "->0x%" PRIxPTR ": ret=%" PRIi32, key, val, positions[key]);   \
+    } while(0)
+
+
+#define GET_ENTRY_WITH_POSITION(table, position, key_p, orig_val_p, ret)                                                \
+    do {                                                                                                                \
+        ret = rte_hash_get_key_data_with_position_x(table, position, (void **) &(key_p), (void **) &(orig_val_p));      \
+        DEBUG("Get key with position %d, ret=%d, key=%" PRIu32 "(%p), val=%p", position, ret, *(key_p), key_p, orig_val_p);  \
+    } while (0)
+
+
+#define LOOKUP_VALUES(table, key, orig_val_p, ret)                                                              \
+    do {                                                                                                        \
+        DEBUG("");                                                                                              \
+        DEBUG("#### TABLE ####")                                                                                \
+        for (key = 0; key <= HASH_ENTRIES; i++) {                                                               \
+            ret = rte_hash_lookup_data_x(table, &(key), (void **) &(orig_val_p));                               \
+            DEBUG("Lookup %" PRIu32 ", ret=%" PRIi32 ", pos=%d, val=%p", key, ret, positions[key], orig_val_p); \
+        }                                                                                                       \
+        DEBUG("#### TABLE ####");                                                                               \
+        DEBUG("");                                                                                              \
+    } while(0)
+
+
+#define DELETE_ENTRY(table, key, key_p, orig_val_p, positions, ret)                                 \
+    do {                                                                                            \
+        positions[key] = rte_hash_del_key_x(table, &(key), (void **) &(orig_val_p));                \
+        DEBUG("Delete %" PRIu32 ", ret=%" PRIi32 ", orig_val=%p", i, positions[key], orig_val_p);   \
+    } while(0)
+
+#define DELETE_ENTRY_WO_POSITIONS(table, key, key_p, orig_val_p, position, ret)                     \
+    do {                                                                                            \
+        position = rte_hash_del_key_x(table, &(key), (void **) &(orig_val_p));                \
+        DEBUG("Delete %" PRIu32 ", ret=%" PRIi32 ", orig_val=%p", i, position, orig_val_p);   \
+    } while(0)
+
+#define ITERATE_TABLE(table, key_p, orig_val_p, i, ret)                                                                 \
+    do {                                                                                                                \
+        i = 0;                                                                                                          \
+        DEBUG("");                                                                                                      \
+        DEBUG("#### TABLE ITERATE ####");                                                                               \
+        for (i = 0; (ret = rte_hash_iterate_x(table, (const void **) &(key_p), (void **) &(orig_val_p), &(i))) >= 0;)   \
+            DEBUG("ret=%" PRIi32 ", key=%d(%p), val=%p, next=%" PRIu32, ret, *(key_p), key_p, orig_val_p, i);           \
+        DEBUG("#### TABLE ITERATE ####");                                                                               \
+        DEBUG("");                                                                                                      \
+    } while(0)
 
 static void
 test_hash(void) {
@@ -30,20 +93,27 @@ test_hash(void) {
 
     struct rte_hash_parameters params = {
         .entries = HASH_ENTRIES,
-        .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF,
+        //        .extra_flag = 0,
+        //        .extra_flag = RTE_HASH_EXTRA_FLAGS_MULTI_WRITER_ADD,
+        //        .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF,
         //        .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF | RTE_HASH_EXTRA_FLAGS_MULTI_WRITER_ADD,
-        //        .extra_flag = RTE_HASH_EXTRA_FLAGS_MULTI_WRITER_ADD | RTE_HASH_EXTRA_FLAGS_NO_FREE_ON_DEL,
-        //        .extra_flag = RTE_HASH_EXTRA_FLAGS_NO_FREE_ON_DEL,
+        //        .extra_flag = RTE_HASH_EXTRA_FLAGS_NO_FREE_ON_DEL | RTE_HASH_EXTRA_FLAGS_MULTI_WRITER_ADD,
+        .extra_flag = RTE_HASH_EXTRA_FLAGS_NO_FREE_ON_DEL,
         .hash_func = my_hash_int,
         .hash_func_init_val = 100,
         .key_len = sizeof (uint32_t),
         .name = "test_hash",
+        .reserved = 0,
         .socket_id = rte_socket_id()
     };
-    uint32_t i;
-    uint32_t *key;
-    uintptr_t val, *orig_val = NULL; 
+    int positions[HASH_ENTRIES + 1], position;
+    uint32_t i, *key_p;
+    uintptr_t val, *orig_val_p;
     int32_t ret;
+    bool no_free_on_del = (params.extra_flag & RTE_HASH_EXTRA_FLAGS_NO_FREE_ON_DEL) != 0
+            || (params.extra_flag & RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF) != 0;
+    // when multi_writer_add, a lot of free key slots are created.
+    bool lack_space = no_free_on_del && (params.extra_flag & RTE_HASH_EXTRA_FLAGS_MULTI_WRITER_ADD) == 0;
 
     printf("socket id=%u\n", rte_socket_id());
     table = rte_hash_create_x(&params);
@@ -51,132 +121,87 @@ test_hash(void) {
         rte_exit(EXIT_FAILURE, "%s:%d %s(): Cannot create hash table!", __FILE__, __LINE__, __FUNCTION__);
     }
 
+    DEBUG("############# FILL TABLE #############");
+    DEBUG("");
+
     for (i = 0, val = i + HASH_ENTRIES; i <= HASH_ENTRIES; i++, val--) {
-        positions[i] = rte_hash_add_key_data_x(table, &i, (void *)val, (void **)&orig_val);
-        printf("Added %" PRIu32 "->0x%" PRIxPTR " to table, ret=%" PRIi32 ", orig=%p\n", i, val, positions[i], orig_val);
-        positions[i] = rte_hash_add_key_data_x(table, &i, (void *)(val + 1), (void **)&orig_val);
-        printf("Added %" PRIu32 "->0x%" PRIxPTR " to table, ret=%" PRIi32 ", orig=%p\n", i, val + 1, positions[i], orig_val);
-        positions[i] = rte_hash_add_key_data_x(table, &i, (void *)(val + 2), (void **)&orig_val);
-        printf("Added %" PRIu32 "->0x%" PRIxPTR " to table, ret=%" PRIi32 ", orig=%p\n", i, val + 2, positions[i], orig_val);
+        ADD_ENTRY(table, i, val, positions, orig_val_p);
+        ADD_ENTRY(table, i, val + 1, positions, orig_val_p);
+        ADD_ENTRY_WO_ORIG(table, i, val + 2, positions);
     }
-    printf("\n Current Count=%" PRIu32 "\n\n", rte_hash_count_x(table));
-    
-    ret = rte_hash_get_key_with_position_x(table, positions[HASH_ENTRIES - 1], (void **) &key);
-    printf("get key with position %d=%d, tmp=%p (%" PRIu32 ")\n", positions[HASH_ENTRIES - 1], ret, key, *key);
-    ret = rte_hash_get_key_with_position_x(table, positions[0], (void **) &key);
-    printf("get key with position %d=%d, tmp=%p (%" PRIu32 ")\n", positions[0], ret, key, *key);
-    ret = rte_hash_get_key_with_position_x(table, HASH_ENTRIES, (void **) &key);
-    printf("get key with position %d=%d, tmp=%p\n", HASH_ENTRIES, ret, key);
+    DEBUG(">>>> Current Count=%" PRIu32, rte_hash_count_x(table));
+    DEBUG("");
 
-    for (i = 0; i < HASH_ENTRIES; i++) {
-        ret = rte_hash_lookup_data_x(table, &i, (void **)&orig_val);
-        printf("Lookup %" PRIu32 " on table, ret=%" PRIi32 ", pos=%d, val=%p\n", i, ret, positions[i], orig_val);
-    }
-    printf("\n**********TEST RTE_HASH_DEL_KEY************\n");
+    GET_ENTRY_WITH_POSITION(table, positions[HASH_ENTRIES - 1], key_p, orig_val_p, ret);
+    GET_ENTRY_WITH_POSITION(table, positions[0], key_p, orig_val_p, ret);
+    GET_ENTRY_WITH_POSITION(table, HASH_ENTRIES, key_p, orig_val_p, ret);
 
+    LOOKUP_VALUES(table, i, orig_val_p, ret);
+    ITERATE_TABLE(table, key_p, orig_val_p, i, ret);
+
+    DEBUG("############# TEST RTE_HASH_DELETE_KEY #############");
+    DEBUG("");
     for (i = TEST_HASH_START; i < TEST_HASH_END; i++) {
-        ret = rte_hash_del_key_x(table, &i);
-        printf("Deleted %" PRIu32 " from table, ret=%" PRIi32 "\n", i, ret);
-        ret = rte_hash_get_key_with_position_x(table, ret, (void **) &key);
-        printf("get key with position=%d, tmp=%p %" PRIu32 "\n", ret, key, *key);
+        DELETE_ENTRY(table, i, key_p, orig_val_p, positions, ret);
+        GET_ENTRY_WITH_POSITION(table, positions[i], key_p, orig_val_p, ret);
     }
-    printf("\n Current Count=%" PRIu32 "\n\n", rte_hash_count_x(table));
-
-    for (i = 0; i < HASH_ENTRIES; i++) {
-        ret = rte_hash_lookup_data_x(table, &i, (void **)&orig_val);
-        printf("Lookup %" PRIu32 " on table, ret=%" PRIi32 ", pos=%d, val=%p\n", i, ret, positions[i], orig_val);
-    }
-
-    return;
-    printf(" New Hash Count(After del)=%d\n", rte_hash_count_x(table));
-    printf("**********************\n");
-#if 0
-    i = 3;
-    ret = rte_hash_lookup_x(table, &i);
-    printf("Lookup %" PRIu32 " on table, ret=%" PRIi32 "\n", i, ret);
-
-    i = 7;
-    ret = rte_hash_lookup_x(table, &i);
-    printf("Lookup %" PRIu32 " on table, ret=%" PRIi32 "\n", i, ret);
-#endif
-
     for (i = TEST_HASH_START; i < TEST_HASH_END; i++) {
-        ret = rte_hash_add_key_x(table, &i);
-        printf("Added %" PRIu32 " to table, ret=%" PRIi32 "\n", i, ret);
+        DELETE_ENTRY_WO_POSITIONS(table, i, key_p, orig_val_p, position, ret);
+    }
+    DEBUG(">>>> Current Count=%" PRIu32, rte_hash_count_x(table));
+    LOOKUP_VALUES(table, i, orig_val_p, ret);
+    ITERATE_TABLE(table, key_p, orig_val_p, i, ret);
+
+    DEBUG("############# TEST RTE_HASH_ADD_KEY%s #############", lack_space ? " NO SPACE" : "");
+    DEBUG("");
+
+    for (i = TEST_HASH_START; i <= TEST_HASH_END; i++) {
+        val = 0x100 + i;
+        ADD_ENTRY_WO_POSITIONS(table, i, val, position, orig_val_p);
+    }
+    DEBUG(">>>> Current Count=%" PRIu32, rte_hash_count_x(table));
+    LOOKUP_VALUES(table, i, orig_val_p, ret);
+    ITERATE_TABLE(table, key_p, orig_val_p, i, ret);
+
+
+    if (no_free_on_del) {
+        DEBUG("############# TEST FREE_KEY_WITH_POS #############");
+        DEBUG("");
+
+        for (i = TEST_HASH_START; i < TEST_HASH_END; i++) {
+            ret = rte_hash_free_key_with_position_x(table, positions[i], (void **) &orig_val_p);
+            DEBUG("Free key at position %" PRIu32 " from table, ret=%" PRIi32 ", val=%p", positions[i], ret, orig_val_p);
+        }
+        DEBUG(">>>> Current Count=%" PRIu32, rte_hash_count_x(table));
+        LOOKUP_VALUES(table, i, orig_val_p, ret);
+        ITERATE_TABLE(table, key_p, orig_val_p, i, ret);
+
+
+        DEBUG("############# TEST RTE_HASH_ADD_KEY %s #############", lack_space ? "ADD THE KEYS BACK" : "ADD_DUPLICATE_KEYS");
+        DEBUG("");
+
+        for (i = TEST_HASH_START; i <= TEST_HASH_END; i++) {
+            val = 0x200 + i;
+            ADD_ENTRY(table, i, val, positions, orig_val_p);
+        }
+        DEBUG(">>>> Current Count=%" PRIu32, rte_hash_count_x(table));
+        LOOKUP_VALUES(table, i, orig_val_p, ret);
+        ITERATE_TABLE(table, key_p, orig_val_p, i, ret);
     }
 
-    for (i = 0; i < HASH_ENTRIES; i++) {
-        ret = rte_hash_lookup_x(table, &i);
-        printf("Lookup %" PRIu32 " on table, ret=%" PRIi32 "\n", i, ret);
+    DEBUG("############# TEST RTE_HASH_ADD_KEY DUPLICATE KEYS #############");
+    DEBUG("");
+
+    for (i = TEST_HASH_START; i <= TEST_HASH_END; i++) {
+        val = 0x300 + i;
+        ADD_ENTRY(table, i, val, positions, orig_val_p);
     }
-    printf(" New Hash Count(After add)=%d\n", rte_hash_count_x(table));
-    printf("**********************\n");
-#if 0
-    ret = rte_hash_add_key_x(table, &i);
-    printf("Added %" PRIu32 " to table, ret=%" PRIi32 "\n", i, ret);
-    printf("Current Count=%d\n", rte_hash_count_x(table));
-#endif
-    printf("\n**********TEST_FREE_KEY_WITH_POS************\n");
+    DEBUG(">>>> Current Count=%" PRIu32, rte_hash_count_x(table));
+    LOOKUP_VALUES(table, i, orig_val_p, ret);
+    ITERATE_TABLE(table, key_p, orig_val_p, i, ret);
 
-    for (i = TEST_HASH_START; i < TEST_HASH_END; i++) {
-        ret = rte_hash_free_key_with_position_x(table, positions[i]);
-        printf("Freed  key at position %" PRIu32 " from table, ret=%" PRIi32 "\n", positions[i], ret);
-    }
-    printf("Hash Count (After free)=%d\n", rte_hash_count_x(table));
+    rte_hash_free_x(table);
 
-    for (i = 0; i < HASH_ENTRIES; i++) {
-        ret = rte_hash_lookup_x(table, &i);
-        printf("Lookup for %" PRIu32 " in table, ret=%" PRIi32 "\n", i, ret);
-    }
-#if 0
-    i = 4;
-    ret = rte_hash_lookup_x(table, &i);
-    printf("Lookup %" PRIu32 " on table, ret=%" PRIi32 "\n", i, ret);
-
-    i = 3;
-    ret = rte_hash_lookup_x(table, &i);
-    printf("Lookup %" PRIu32 " on table, ret=%" PRIi32 "\n", i, ret);
-#if 0
-    i = 2;
-    ret = rte_hash_lookup_x(table, &i);
-    printf("Lookup %" PRIu32 " on table, ret=%" PRIi32 "\n", i, ret);
-#endif
-
-#endif
-
-    printf("\n**********TEST RTE_HASH_ADD_KEY DUPLICATE KEYS************\n");
-    for (i = TEST_HASH_START; i < TEST_HASH_END; i++) {
-        ret = rte_hash_add_key_x(table, &i);
-        printf("Added %" PRIu32 " to table, ret=%" PRIi32 "\n", i, ret);
-    }
-    printf(" New Hash Count(After add)=%d\n", rte_hash_count_x(table));
-    for (i = 0; i < HASH_ENTRIES; i++) {
-        ret = rte_hash_lookup_x(table, &i);
-        printf("Lookup for %" PRIu32 " in table, ret=%" PRIi32 "\n", i, ret);
-    }
-
-    printf("\n**********TEST RTE_HASH_ADD_KEY ONE MORE ENTRY************\n");
-    i = HASH_ENTRIES;
-    ret = rte_hash_add_key_x(table, &i);
-    printf("Added %" PRIu32 " to table, ret=%" PRIi32 "\n", i, ret);
-    printf(" New Hash Count(After add)=%d\n", rte_hash_count_x(table));
-    for (i = 0; i < HASH_ENTRIES + 1; i++) {
-        ret = rte_hash_lookup_x(table, &i);
-        printf("Lookup for %" PRIu32 " in table, ret=%" PRIi32 "\n", i, ret);
-    }
-
-    printf("**********************\n\n");
-#if 0
-    i = 3;
-    ret = rte_hash_add_key_x(table, &i);
-    printf("Added %" PRIu32 " to table, ret=%" PRIi32 "\n", i, ret);
-    printf(" New Hash Count=%d\n", rte_hash_count_x(table));
-
-    i = 2;
-    ret = rte_hash_add_key_x(table, &i);
-    printf("Added %" PRIu32 " to table, ret=%" PRIi32 "\n", i, ret);
-    printf(" New Hash Count=%d\n", rte_hash_count_x(table));
-#endif
 }
 
 //static struct rte_hash *table;

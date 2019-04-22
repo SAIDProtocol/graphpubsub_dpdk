@@ -2,11 +2,15 @@
 # Copyright(c) 2010-2014 Intel Corporation
 #
 
-# binary name
-APP = gps_i_forwarder
-
-# all source are stored in SRCS-y
-SRCS-y := main.c gps_i_neighbor_table.c
+ifeq ($(TEST),) 
+    # binary name
+    APP = gps_i_forwarder
+    # all source are stored in SRCS-y
+    SRCS-y := main.c gps_i_neighbor_table.c rte_cuckoo_hash.c
+else
+    APP = test_gps_i_forwarder
+    SRCS-y := test.c test_gps_i_neighbor_table.c gps_i_neighbor_table.c rte_cuckoo_hash.c
+endif
 
 # Build using pkg-config variables if possible
 $(shell pkg-config --exists libdpdk)

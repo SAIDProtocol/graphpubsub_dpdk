@@ -3,10 +3,10 @@
 #
 
 # binary name
-APP = gps_i_test
+APP = mbuf
 
 # all source are stored in SRCS-y
-SRCS-y := main.c test_guid.c test_na.c test_headers.c test_anno.c
+SRCS-y := main.c
 
 # Build using pkg-config variables if possible
 $(shell pkg-config --exists libdpdk)
@@ -20,7 +20,7 @@ static: build/$(APP)-static
 	ln -sf $(APP)-static build/$(APP)
 
 PC_FILE := $(shell pkg-config --path libdpdk)
-CFLAGS += -O3 -I../../include/ $(shell pkg-config --cflags libdpdk)
+CFLAGS += -O3 $(shell pkg-config --cflags libdpdk)
 LDFLAGS_SHARED = $(shell pkg-config --libs libdpdk)
 LDFLAGS_STATIC = -Wl,-Bstatic $(shell pkg-config --static --libs libdpdk)
 
@@ -49,7 +49,7 @@ RTE_TARGET ?= x86_64-native-linuxapp-gcc
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
-CFLAGS += -O3 -I../../include/
+CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 
 # workaround for a gcc bug with noreturn attribute

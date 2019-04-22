@@ -10,12 +10,9 @@
 
 #include <gps_na.h>
 #include <rte_ether.h>
-#include <rte_hash.h>
-#include <rte_ip.h>
-#include <rte_jhash.h>
-#include <rte_malloc.h>
-#include <rte_memcpy.h>
+#include "rte_hash.h"
 #include <stdbool.h>
+#include <linux_list.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,14 +24,14 @@ extern "C" {
         uint32_t ip;
         bool use_ip;
     };
-    
+
 #define GPS_I_NEIGHBOR_INFO_FMT_SIZE 64
 
-    static inline char *
+    static __rte_always_inline char *
     gps_i_neighbor_info_format(char *buf, uint16_t size, const struct gps_i_neighbor_info *info) {
         char ether_buf[ETHER_ADDR_FMT_SIZE];
         ether_format_addr(ether_buf, ETHER_ADDR_FMT_SIZE, &info->ether);
-        const uint8_t *tmp_ip = (const uint8_t *)&info->ip;
+        const uint8_t *tmp_ip = (const uint8_t *) &info->ip;
         if (info->use_ip) {
             snprintf(buf, size, "Neighbor{ether=%s,ip=%" PRIu8 ".%" PRIu8 ".%" PRIu8 ".%" PRIu8 ",port=%" PRIu16 "}",
                     ether_buf, tmp_ip[3], tmp_ip[2], tmp_ip[1], tmp_ip[0], info->port);
@@ -44,109 +41,149 @@ extern "C" {
         }
         return buf;
     }
+    
+    struct gps_i_neighbor_table_value {
+        struct gps_i_neighbor_info value;
+        struct linux_list_head available_list;
+    };
 
-    extern struct rte_hash *gps_i_neighbor_keys;
-    extern struct gps_i_neighbor_info *gps_i_neighbor_values;
+    struct gps_i_neighbor_table {
+        uint32_t entries;
+        struct rte_hash_x *keys;
+        struct gps_i_neighbor_table_value *values;
+        struct linux_list_head values_available;
+        struct linux_list_head values_to_free;
+        int32_t *keys_to_free;
+        uint32_t num_keys_to_free;
+    };
 
     /**
-     * Initiate neighbor table with specified number of entries on a socket id.
+     * Initiate a neighbor table with specified number of entries on a socket id.
      * 
-     * @param entries The number of entries to create.
-     * @param socket_id The socket id.
+     * The assumption is that there will be only 1 writer (including add and remove),
+     * but there can be multiple readers (lookups).
+     * 
+     * @param type
+     *   A string identifying the type of allocated objects (useful for debug
+     *   purposes, such as identifying the cause of a memory leak). Can be NULL.
+     * @param entries 
+     *   The number of entries to create. Better use 2^n-1 for optimal memory utilization.
+     * @param socket_id 
+     *   The socket id.
+     * @return 
+     *   - The neighbor table created
+     *   - NULL on error.
      */
-    static inline void
-    gps_i_neighbor_table_init(uint32_t entries, unsigned socket_id) {
-        struct rte_hash_parameters params = {
-            .entries = entries,
-            .extra_flag = RTE_HASH_EXTRA_FLAGS_TRANS_MEM_SUPPORT | RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY,
-            .hash_func = rte_jhash,
-            .hash_func_init_val = 0,
-            .key_len = sizeof (struct gps_na),
-            .name = "gps_i_neighbor_keys",
-            .socket_id = socket_id
-        };
-        gps_i_neighbor_keys = rte_hash_create(&params);
-        if (gps_i_neighbor_keys == NULL) {
-            rte_exit(EXIT_FAILURE, "Cannot initiate neighbor keys!\n");
-        }
+    struct gps_i_neighbor_table *
+    gps_i_neighbor_table_create(const char *type, uint32_t entries, unsigned socket_id);
 
-        gps_i_neighbor_values = rte_malloc_socket("gps_i_neighbor_values",
-                sizeof (struct gps_i_neighbor_info) * entries, RTE_CACHE_LINE_SIZE,
-                socket_id);
-        if (gps_i_neighbor_values == NULL) {
-            rte_exit(EXIT_FAILURE, "Cannot initiate neighbor values!\n");
-        }
-    }
+    /**
+     * Gets an empty slot to store the neighbor info.
+     * 
+     * @param table 
+     *   The table that contains the entries.
+     * @return 
+     *   - The empty slot, but might not be zeroed. 
+     *   - NULL if no slot available.
+     */
+    struct gps_i_neighbor_info *
+    gps_i_neighbor_table_get_entry(struct gps_i_neighbor_table *table);
 
-    static inline void
-    gps_i_neighbor_table_destroy(void) {
-        rte_hash_free(gps_i_neighbor_keys);
-        rte_free(gps_i_neighbor_values);
-    }
+    /**
+     * Returns an unused slot.
+     * 
+     * @param table 
+     *   The table that contains the entries.
+     * @return 
+     *   - The empty slot. 
+     *   - NULL if no slot available.
+     */
+    void
+    gps_i_neighbor_table_return_entry(struct gps_i_neighbor_table *table,
+            struct gps_i_neighbor_info *entry);
 
     /**
      * Add an entry into the neighbor table.
      * 
-     * No lock is added here. Caller has the responsibility to add locks when needed.
-     * Yet, the hash table has RW_CONCURRENCY set, no need to add lock.
+     * Using lock-free algorithms. Can do add/remove/lookup at the same time.
+     * Need to call cleanup when other threads have claimed quiescent.
+     * The original value will be freed on cleanup.
      * 
-     * @param na The na of the neighbor table entry.
-     * @param info The info to be stored.
-     * @return The position added/set. &lt;0 on failure.
+     * @param table 
+     *   The neighbor table to be added to.
+     * @param na 
+     *   The na of the neighbor table entry.
+     * @param info 
+     *   The info to be stored.
+     * @return 
+     *   - The position added/set. 
+     *   - Less than 0 on failure.
      */
-    static inline int32_t
-    gps_i_neighbor_table_set(const struct gps_na *na, const struct gps_i_neighbor_info *info) {
-        int32_t ret;
+    int32_t
+    gps_i_neighbor_table_set(struct gps_i_neighbor_table * table,
+            const struct gps_na *na, struct gps_i_neighbor_info *info);
 
-        ret = rte_hash_add_key(gps_i_neighbor_keys, na);
-        if (ret >= 0) {
-            rte_memcpy(gps_i_neighbor_values + ret, info, sizeof (struct gps_i_neighbor_info));
-        }
-
-        return ret;
-    }
+    /**
+     * Remove an entry from the neighbor table.
+     * 
+     * Value will be freed at cleanup stage. Can perform RCU
+     * 
+     * @param table 
+     *   The table to be deleted from.
+     * @param na 
+     *   The na of the entry.
+     * @return 
+     *   - The position deleted. 
+     *   - Less than 0 on failure.
+     */
+    int32_t
+    gps_i_neighbor_table_delete(struct gps_i_neighbor_table * table,
+            const struct gps_na *na);
 
     /**
      * Lookup an entry in the neighbor table.
+     *
+     * Should be put in rcu read lock block.
      * 
-     * No lock is added here. Caller has the responsibility to add locks when needed.
-     * Yet, the hash table has RW_CONCURRENCY set, no need to add lock.
-     * 
-     * @param na The na of the entry.
-     * @return The neighbor entry, NULL if entry not exist.
+     * @param table 
+     *   The table to be looked up.
+     * @param na 
+     *   The na of the entry.
+     * @return 
+     *   - The neighbor entry.
+     *   - NULL if entry not exist.
      */
-    static inline const struct gps_i_neighbor_info *
-    gps_i_neighbor_table_lookup(const struct gps_na *na) {
-        int32_t ret;
+    static __rte_always_inline const struct gps_i_neighbor_info *
+    gps_i_neighbor_table_lookup(const struct gps_i_neighbor_table * table,
+            const struct gps_na *na) {
+        struct gps_i_neighbor_table_value *value;
+        int ret;
+  
+        ret = rte_hash_lookup_data_x(table->keys, na, (void **)&value);
+        if (ret < 0) return NULL;
 
-        ret = rte_hash_lookup(gps_i_neighbor_keys, na);
-
-        return ret < 0 ? NULL : (gps_i_neighbor_values + ret);
+        return &value->value;
     }
 
     /**
-     * Remove an entry in the neighbor table.
+     * Cleanup the entries deleted during grace period.
      * 
-     * Value is not cleared, just invalidated.
+     * Shall be called when all the referring threads claim quiescent state.
      * 
-     * No lock is added here. Caller has the responsibility to add locks when needed.
-     * Yet, the hash table has RW_CONCURRENCY set, no need to add lock.
-     * 
-     * @param na The na of the entry.
-     * @return The position deleted. &lt;0 on failure.
+     * @param table 
+     *   The table to be cleaned.
      */
-    static inline int
-    gps_i_neighbor_table_delete(const struct gps_na *na) {
-        int32_t ret;
+    void
+    gps_i_neighbor_table_cleanup(struct gps_i_neighbor_table * table);
 
-        ret = rte_hash_del_key(gps_i_neighbor_keys, na);
-
-        // No need to remove the entry in value. 
-
-        return ret;
-    }
-
-
+    /**
+     * Clear all the resources the table uses.
+     * 
+     * @param table 
+     *   The table to be cleaned.
+     */
+    void
+    gps_i_neighbor_table_destroy(struct gps_i_neighbor_table * table);
 
 #ifdef __cplusplus
 }

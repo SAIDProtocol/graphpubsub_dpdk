@@ -8,13 +8,8 @@
 #include <rte_common.h>
 #include <rte_eal.h>
 #include <rte_mbuf.h>
-#include "../forwarder/gps_i_anno.h"
 
-
-extern void test_guid(void);
-extern void test_na(void);
-extern void test_headers(void);
-extern void test_anno(void);
+extern void test_neighbor_table(void);
 void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 
 
@@ -28,12 +23,9 @@ main(int argc, char **argv) {
     argc -= ret;
     argv += ret;
 
-
-    test_guid();
-    test_na();
-    test_headers();
-    test_anno();
-
+    test_neighbor_table();
+    
+    
     return 0;
 }
 
@@ -48,4 +40,5 @@ print_buf(const void *buf, uint32_t size, uint32_t wrap) {
         printf("\n");
     }
 }
+
 

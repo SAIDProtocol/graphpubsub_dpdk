@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include "gps_i_anno.h"
 #include <gps_headers.h>
+#include "gps_i_neighbor_table.h"
 
 int main(int argc, char **argv) {
     int ret;
@@ -28,7 +29,8 @@ int main(int argc, char **argv) {
 
     printf("gps_pkt size: %zd\n", sizeof (struct gps_pkt_lsa));
     printf("gps_anno size: %zd\n", sizeof (struct gps_i_anno));
-    
+
+
     return 0;
 }
 

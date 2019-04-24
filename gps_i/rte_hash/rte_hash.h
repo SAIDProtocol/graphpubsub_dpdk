@@ -362,7 +362,7 @@ rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key, void *
  */
 int
 rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t position,
-			       void **key);
+			       const void **key);
 
 /**
  * Find a key and corresponding data in the hash table given the position.
@@ -385,7 +385,7 @@ rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t posit
  */
 int
 rte_hash_get_key_data_with_position_x(const struct rte_hash_x *h, const int32_t position,
-			       void **key, void **data);
+			       const void **key, void **data);
 
 /**
  *  * Free a hash key in the hash table given the position

@@ -46,7 +46,7 @@ static uint32_t my_hash_int(const void *key, __rte_unused uint32_t key_len, uint
 
 #define GET_ENTRY_WITH_POSITION(table, position, key_p, orig_val_p, ret)                                                \
     do {                                                                                                                \
-        ret = rte_hash_get_key_data_with_position_x(table, position, (void **) &(key_p), (void **) &(orig_val_p));      \
+        ret = rte_hash_get_key_data_with_position_x(table, position, (const void **) &(key_p), (void **) &(orig_val_p));      \
         DEBUG("Get key with position %d, ret=%d, key=%" PRIu32 "(%p), val=%p", position, ret, *(key_p), key_p, orig_val_p);  \
     } while (0)
 
@@ -91,7 +91,7 @@ static void
 test_hash(void) {
     struct rte_hash_x *table;
 
-    struct rte_hash_parameters params = {
+    struct rte_hash_parameters_x params = {
         .entries = HASH_ENTRIES,
         //        .extra_flag = 0,
         //        .extra_flag = RTE_HASH_EXTRA_FLAGS_MULTI_WRITER_ADD,

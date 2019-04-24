@@ -8,6 +8,7 @@
 #ifndef GPS_I_NEIGHBOR_TABLE_H
 #define GPS_I_NEIGHBOR_TABLE_H
 
+#include <assert.h>
 #include <gps_na.h>
 #include <rte_ether.h>
 #include "rte_hash.h"
@@ -41,20 +42,22 @@ extern "C" {
         }
         return buf;
     }
-    
-    struct gps_i_neighbor_table_value {
-        struct gps_i_neighbor_info value;
-        struct linux_list_head available_list;
-    };
+
+#define NEIGHBOR_TABLE_ENTRIES_EXTRA 8
+#define NEIGHBOR_TABLE_ENTRIES_PADDING 8
 
     struct gps_i_neighbor_table {
         uint32_t entries;
         struct rte_hash_x *keys;
-        struct gps_i_neighbor_table_value *values;
-        struct linux_list_head values_available;
-        struct linux_list_head values_to_free;
+        struct gps_i_neighbor_info *values;
         int32_t *keys_to_free;
         uint32_t num_keys_to_free;
+        // 0 to num_values_available - 1: value slots available
+        // value_entries = entries + NEIGHBOR_TABLE_ENTRIES_EXTRA
+        // total_entries = entries + padding
+        // total_entries - 1 - num_values_to_free to total_entries - 1: values slots to free
+        int32_t *values_available;
+        uint32_t num_values_available, num_values_to_free;
     };
 
     /**
@@ -153,16 +156,15 @@ extern "C" {
      *   - The neighbor entry.
      *   - NULL if entry not exist.
      */
-    static __rte_always_inline const struct gps_i_neighbor_info *
+    static __rte_always_inline struct gps_i_neighbor_info *
     gps_i_neighbor_table_lookup(const struct gps_i_neighbor_table * table,
             const struct gps_na *na) {
-        struct gps_i_neighbor_table_value *value;
+        struct gps_i_neighbor_info *value;
         int ret;
-  
-        ret = rte_hash_lookup_data_x(table->keys, na, (void **)&value);
-        if (ret < 0) return NULL;
 
-        return &value->value;
+        ret = rte_hash_lookup_data_x(table->keys, na, (void **) &value);
+        if (ret < 0) return NULL;
+        return value;
     }
 
     /**
@@ -184,6 +186,70 @@ extern "C" {
      */
     void
     gps_i_neighbor_table_destroy(struct gps_i_neighbor_table * table);
+
+    static __rte_always_inline void
+    gps_i_neighbor_table_print_available(struct gps_i_neighbor_table *table, FILE *stream) {
+        uint32_t i;
+        uint32_t end = table->entries + NEIGHBOR_TABLE_ENTRIES_EXTRA + NEIGHBOR_TABLE_ENTRIES_PADDING;
+
+        for (i = 0; i < end; i++) {
+            fprintf(stream, "[%" PRIu32, i);
+            if (i < table->num_values_available) {
+                fprintf(stream, ",A");
+            }
+            if (i >= end - table->num_values_to_free) {
+                fprintf(stream, ",F");
+            }
+            fprintf(stream, "]%" PRIi32 " ", table->values_available[i]);
+        }
+        fprintf(stream, "\n");
+    }
+
+    static __rte_always_inline void
+    gps_i_neighbor_table_print_keys_to_free(struct gps_i_neighbor_table *table, FILE *stream) {
+        uint32_t i;
+        int32_t position;
+        const struct gps_na *na;
+        struct gps_i_neighbor_info *data;
+        char na_buf[GPS_NA_FMT_SIZE];
+
+        fprintf(stream, ">>> To frees: \n");
+        for (i = 0; i < table->num_keys_to_free; i++) {
+            position = table->keys_to_free[i];
+            rte_hash_get_key_data_with_position_x(table->keys, position, (const void **) &na, (void **) &data);
+
+            fprintf(stream, "  %s (%d)\n",
+                    gps_na_format(na_buf, sizeof (na_buf), na),
+                    position);
+        }
+        fprintf(stream, ">>>>>>>>>>\n");
+    }
+
+    static __rte_always_inline void
+    gps_i_neighbor_table_print(struct gps_i_neighbor_table *table, FILE *stream) {
+        uint32_t next = 0;
+        int32_t position;
+        const struct gps_na *na;
+        struct gps_i_neighbor_info *data;
+        char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+
+        fprintf(stream, ">>> Table: \n");
+        for (;;) {
+            position = rte_hash_iterate_x(table->keys, (const void **) &na, (void **) &data, &next);
+            if (position == -ENOENT)
+                break;
+
+            assert(position >= 0);
+            fprintf(stream, "  %s (%d) -> %s (%zd) \n",
+                    gps_na_format(na_buf, sizeof (na_buf), na),
+                    position,
+                    data == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), data),
+                    data - table->values);
+        }
+        fprintf(stream, ">>>>>>>>>>\n");
+
+    }
+
 
 #ifdef __cplusplus
 }

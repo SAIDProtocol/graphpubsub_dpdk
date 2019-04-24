@@ -55,6 +55,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 
 CFLAGS += -O3 -I../../include/
 CFLAGS += $(WERROR_FLAGS)
+LDFLAGS += -lurcu-qsbr
 
 # workaround for a gcc bug with noreturn attribute
 # http://gcc.gnu.org/bugzilla/show_bug.cgi?id=12603

@@ -1603,7 +1603,7 @@ rte_hash_del_key_x(const struct rte_hash_x *h, const void *key, void **orig_data
 
 int
 rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t position,
-			       void **key)
+			       const void **key)
 {
 	RETURN_IF_TRUE(((h == NULL) || (key == NULL)), -EINVAL);
 
@@ -1623,7 +1623,7 @@ rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t posit
 
 int
 rte_hash_get_key_data_with_position_x(const struct rte_hash_x *h, const int32_t position,
-			       void **key, void **data)
+			       const void **key, void **data)
 {
 	RETURN_IF_TRUE(((h == NULL) || (key == NULL)), -EINVAL);
 

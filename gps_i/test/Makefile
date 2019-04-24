@@ -6,8 +6,8 @@
 APP = gps_i_test
 
 # all source are stored in SRCS-y
-SRCS-y := main.c test_guid.c test_na.c test_headers.c test_anno.c
-
+SRCS-y := main.c test_guid.c test_na.c test_headers.c
+	
 # Build using pkg-config variables if possible
 $(shell pkg-config --exists libdpdk)
 ifeq ($(.SHELLSTATUS),0)

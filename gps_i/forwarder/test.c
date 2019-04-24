@@ -8,11 +8,21 @@
 #include <rte_common.h>
 #include <rte_eal.h>
 #include <rte_mbuf.h>
+#include "gps_i_anno.h"
 
 extern void test_neighbor_table(void);
 void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 
+static void
+test_anno(void) {
+    printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
+    printf("size of anno: %zd, prev_hop_na@%zd, next_hop_na@%zd, prio@%zd\n",
+            sizeof (struct gps_i_anno),
+            offsetof(struct gps_i_anno, prev_hop_na),
+            offsetof(struct gps_i_anno, next_hop_na),
+            offsetof(struct gps_i_anno, prio));
 
+}
 
 int
 main(int argc, char **argv) {
@@ -23,6 +33,7 @@ main(int argc, char **argv) {
     argc -= ret;
     argv += ret;
 
+    test_anno();
     test_neighbor_table();
     
     

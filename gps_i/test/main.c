@@ -32,7 +32,6 @@ main(int argc, char **argv) {
     test_guid();
     test_na();
     test_headers();
-    test_anno();
 
     return 0;
 }

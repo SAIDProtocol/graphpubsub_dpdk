@@ -29,17 +29,21 @@ test_guid(void) {
     gps_guid_clear(&guid1);
     printf("GUID1=%s\n", gps_guid_format(guid_format, GPS_GUID_FMT_SIZE, &guid1));
     printf("\tjhash GUID1 %" PRIu32 "\n", rte_jhash(&guid1, GPS_GUID_SIZE, 0));
+    printf("\thash GUID1 %" PRIu32 "\n", gps_guid_hash(&guid1, GPS_GUID_SIZE, 0));
 
     gps_guid_set(&guid1, 0x567890ab);
     printf("GUID1=%s\n", gps_guid_format(guid_format, GPS_GUID_FMT_SIZE, &guid1));
     printf("\tjhash GUID1 %" PRIu32 "\n", rte_jhash(&guid1, GPS_GUID_SIZE, 0));
+    printf("\thash GUID1 %" PRIu32 "\n", gps_guid_hash(&guid1, GPS_GUID_SIZE, 0));
 
     printf("GUID2=%s\n", gps_guid_format(guid_format, GPS_GUID_FMT_SIZE, &guid2));
     printf("\tcmp GUID1 GUID2: %d\n", gps_guid_cmp(&guid1, &guid2));
     printf("\tjhash GUID2 %" PRIu32 "\n", rte_jhash(&guid2, GPS_GUID_SIZE, 0));
+    printf("\thash GUID2 %" PRIu32 "\n", gps_guid_hash(&guid2, GPS_GUID_SIZE, 0));
 
     gps_guid_copy(&guid1, &guid2);
     printf("GUID1=%s\n", gps_guid_format(guid_format, GPS_GUID_FMT_SIZE, &guid1));
     printf("\tcmp GUID1 GUID2: %d\n", gps_guid_cmp(&guid1, &guid2));
     printf("\tjhash GUID1 %" PRIu32 "\n", rte_jhash(&guid1, GPS_GUID_SIZE, 0));
+    printf("\thash GUID1 %" PRIu32 "\n", gps_guid_hash(&guid1, GPS_GUID_SIZE, 0));
 }

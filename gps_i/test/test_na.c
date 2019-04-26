@@ -25,17 +25,21 @@ test_na(void) {
     gps_na_clear(&na1);
     printf("NA1=%s\n", gps_na_format(na_format, GPS_NA_FMT_SIZE, &na1));
     printf("\tjhash NA1 %" PRIu32 "\n", rte_jhash(&na1, sizeof (na1), 0));
+    printf("\thash NA1 %" PRIu32 "\n", gps_na_hash(&na1, sizeof (na1), 0));
 
     gps_na_set(&na1, 0x567890ab);
     printf("NA1=%s\n", gps_na_format(na_format, GPS_NA_FMT_SIZE, &na1));
     printf("\tjhash NA1 %" PRIu32 "\n", rte_jhash(&na1, sizeof (na1), 0));
+    printf("\thash NA1 %" PRIu32 "\n", gps_na_hash(&na1, sizeof (na1), 0));
 
     printf("NA2=%s\n", gps_na_format(na_format, GPS_NA_FMT_SIZE, &na2));
     printf("\tcmp NA1 NA2: %d\n", gps_na_cmp(&na1, &na2));
     printf("\tjhash NA2 %" PRIu32 "\n", rte_jhash(&na2, sizeof (na2), 0));
+    printf("\thash NA2 %" PRIu32 "\n", gps_na_hash(&na2, sizeof (na2), 0));
 
     gps_na_copy(&na1, &na2);
     printf("NA1=%s\n", gps_na_format(na_format, GPS_NA_FMT_SIZE, &na1));
     printf("\tcmp NA1 NA2: %d\n", gps_na_cmp(&na1, &na2));
     printf("\tjhash NA1 %" PRIu32 "\n", rte_jhash(&na1, sizeof (na1), 0));
+    printf("\thash NA1 %" PRIu32 "\n", gps_na_hash(&na1, sizeof (na1), 0));
 }

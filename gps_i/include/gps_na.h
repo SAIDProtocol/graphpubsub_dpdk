@@ -60,7 +60,7 @@ extern "C" {
         return buf;
     }
 
-    static inline uint32_t
+    static __rte_always_inline uint32_t
     gps_na_hash(const void *key, uint32_t key_len __rte_unused, uint32_t init_val) {
 //        printf("NA_HASH: key=%p\n", key);
         return rte_jhash_1word(((const struct gps_na *)key)->value, init_val);

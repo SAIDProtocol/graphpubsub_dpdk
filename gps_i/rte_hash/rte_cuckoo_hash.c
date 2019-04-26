@@ -337,6 +337,12 @@ rte_hash_create_x(const struct rte_hash_parameters_x *params)
 #if defined(RTE_ARCH_X86) || defined(RTE_ARCH_ARM64)
 	/* Select function to compare keys */
 	switch (params->key_len) {
+	case 4:
+		h->cmp_jump_table_idx = KEY_4_BYTES;
+		break;
+	case 8:
+		h->cmp_jump_table_idx = KEY_8_BYTES;
+		break;
 	case 16:
 		h->cmp_jump_table_idx = KEY_16_BYTES;
 		break;

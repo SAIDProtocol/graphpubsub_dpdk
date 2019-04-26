@@ -5,7 +5,8 @@
  * Created on April 14, 2019, 2:53 AM
  */
 
-#include <rte_ip.h>
+#include <rte_branch_prediction.h>
+#include <rte_errno.h>
 #include <rte_jhash.h>
 #include <rte_malloc.h>
 #include "gps_i_neighbor_table.h"
@@ -17,160 +18,158 @@
 
 #define RTE_LOGTYPE_NEIGHBOR_TABLE RTE_LOGTYPE_USER1
 
-#define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy");
-#define _DEBUG(fmt, ...) RTE_LOG(INFO, NEIGHBOR_TABLE, "[%s():%d] " fmt "%.0s\n", __FUNCTION__, __LINE__, __VA_ARGS__)
+#define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy")
+#define _DEBUG(fmt, ...) RTE_LOG(INFO, NEIGHBOR_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
+#else
+#define DEBUG(...)
 #endif
 
 struct gps_i_neighbor_table *
-gps_i_neighbor_table_create(const char *type, uint32_t entries, unsigned socket_id) {
-    struct gps_i_neighbor_table *ret = NULL;
+gps_i_neighbor_table_create(const char *type, uint32_t entries,
+        unsigned value_slots, unsigned socket_id) {
+    struct gps_i_neighbor_table *table = NULL;
+    char tmp_name[RTE_MEMZONE_NAMESIZE];
+    DEBUG("entries=%" PRIu32 ", values_to_free=%" PRIu32, entries, value_slots);
+
+    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "NBTK_%s", type);
+    DEBUG("name for key: %s", tmp_name);
     struct rte_hash_parameters_x params = {
         .entries = entries,
         .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF,
         .hash_func = rte_jhash,
         .hash_func_init_val = 0,
         .key_len = sizeof (struct gps_na),
-        .name = type,
+        .name = tmp_name,
         .reserved = 0,
         .socket_id = socket_id
     };
-    uint32_t value_entries = entries + NEIGHBOR_TABLE_ENTRIES_EXTRA;
-    uint32_t available_entries = value_entries + NEIGHBOR_TABLE_ENTRIES_PADDING;
-    uint32_t i;
 
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    DEBUG("entries=%" PRIu32 ", value_entries=%" PRIu32 ", available_entries=%" PRIu32,
-            entries, value_entries, available_entries);
-#endif
+    table = rte_zmalloc_socket(type, sizeof (struct gps_i_neighbor_table),
+            RTE_CACHE_LINE_SIZE, socket_id);
+    if (table == NULL) goto fail;
 
-    ret = rte_zmalloc_socket(type, sizeof (struct gps_i_neighbor_table), RTE_CACHE_LINE_SIZE, socket_id);
-    if (ret == NULL) goto fail;
-    ret->entries = entries;
-    ret->num_values_available = value_entries;
+    table->keys = rte_hash_create_x(&params);
+    if (unlikely(table->keys == NULL)) {
+        DEBUG("fail to create keys, reason: %s", rte_strerror(rte_errno));
+        goto fail;
+    }
+    DEBUG("table->keys=%p", table->keys);
+
+    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "NBTV_%s", type);
+    DEBUG("name for values: %s", tmp_name);
+    table->values = rte_mempool_create(tmp_name, value_slots, sizeof (struct gps_i_neighbor_info), 0, 0, NULL, NULL, NULL, NULL, rte_socket_id(), MEMPOOL_F_NO_CACHE_ALIGN | MEMPOOL_F_SP_PUT | MEMPOOL_F_SC_GET);
+    if (unlikely(table->values == NULL)) {
+        DEBUG("fail to create values, reason: %s", rte_strerror(rte_errno));
+        goto fail;
+    }
+    DEBUG("table->values=%p", table->values);
 
 
-    ret->keys = rte_hash_create_x(&params);
-    if (ret->keys == NULL) goto fail;
+    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "NBTKF_%s", type);
+    DEBUG("name for key_positions_to_free: %s", tmp_name);
+    table->key_positions_to_free = rte_ring_create(tmp_name, entries + 1, socket_id, 0);
+    if (unlikely(table->key_positions_to_free == NULL)) {
+        DEBUG("fail to create key_positions_to_free, reason: %s", rte_strerror(rte_errno));
+        goto fail;
+    }
+    DEBUG("table->key_positions_to_free=%p", table->key_positions_to_free);
 
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    DEBUG("table->keys=%p", ret->keys);
-#endif
+    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "NBTVF_%s", type);
+    DEBUG("name for values_to_free: %s", tmp_name);
+    table->values_to_free = rte_ring_create(tmp_name, value_slots, socket_id, 0);
+    if (unlikely(table->values_to_free == NULL)) {
+        DEBUG("fail to create values_to_free, reason: %s", rte_strerror(rte_errno));
+        goto fail;
+    }
+    DEBUG("table->values_to_free=%p", table->values_to_free);
 
-    ret->values = (struct gps_i_neighbor_info *) rte_malloc_socket(
-            type, sizeof (struct gps_i_neighbor_info) * value_entries, RTE_CACHE_LINE_SIZE, socket_id);
-    if (ret->values == NULL) goto fail;
-
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    DEBUG("table->values=%p", ret->values);
-#endif
-
-    ret->keys_to_free = (int32_t *) rte_malloc_socket(type, sizeof (int32_t) * entries, RTE_CACHE_LINE_SIZE, socket_id);
-    if (ret->keys_to_free == NULL) goto fail;
-
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    DEBUG("table->keys_to_free=%p", ret->keys_to_free);
-#endif
-
-    ret->values_available = (int32_t *) rte_malloc_socket(type, sizeof (int32_t) * available_entries, RTE_CACHE_LINE_SIZE, socket_id);
-    if (ret->values_available == NULL) goto fail;
-
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    DEBUG("table->values_available=%p", ret->values_available);
-#endif
-
-    for (i = 0; i < value_entries; i++)
-        ret->values_available[i] = (int32_t) i;
-
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    gps_i_neighbor_table_print_available(ret, stdout);
-#endif
-
-    return ret;
+    return table;
 
 fail:
-    gps_i_neighbor_table_destroy(ret);
+    if (table->keys != NULL) rte_hash_free_x(table->keys);
+    if (table->values != NULL) rte_mempool_free(table->values);
+    if (table->key_positions_to_free != NULL) rte_ring_free(table->key_positions_to_free);
+    if (table->values_to_free != NULL) rte_ring_free(table->values_to_free);
+    if (table != NULL) rte_free(table);
     return NULL;
 }
 
 void
 gps_i_neighbor_table_destroy(struct gps_i_neighbor_table * table) {
-    if (table != NULL) {
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-        DEBUG("freeing keys=%p, values=%p, keys_to_free=%p, values_available=%p",
-                table->keys, table->values, table->keys_to_free, table->values_available);
-#endif
-        if (table->keys != NULL)
-            rte_hash_free_x(table->keys);
-
-        if (table->values != NULL)
-            rte_free(table->values);
-
-        if (table->keys_to_free != NULL)
-            rte_free(table->keys_to_free);
-
-        if (table->values_available != NULL)
-            rte_free(table->values_available);
-
-        memset(table, 0, sizeof (*table));
-
-        rte_free(table);
-    }
+    DEBUG("free table=%p, keys=%p, key_positions_to_free=%p, values_to_free=%p",
+            table, table->keys, table->key_positions_to_free, table->values_to_free);
+    rte_hash_free_x(table->keys);
+    rte_mempool_free(table->values);
+    rte_ring_free(table->key_positions_to_free);
+    rte_ring_free(table->values_to_free);
+    memset(table, 0, sizeof(*table));
+    rte_free(table);
 }
 
 struct gps_i_neighbor_info *
 gps_i_neighbor_table_get_entry(struct gps_i_neighbor_table *table) {
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    if (table->num_values_available == 0) {
-        DEBUG("No available slots in table.");
+    struct gps_i_neighbor_info *ret;
+    if (likely(rte_mempool_get(table->values, (void **) &ret) == 0)) {
+        DEBUG("get entry: %p", ret);
+        return ret;
     } else {
-        DEBUG("return %" PRIi32 ".", table->values_available[table->num_values_available - 1]);
+        DEBUG("Cannot get entry!");
+        return NULL;
     }
-#endif
-    return (table->num_values_available == 0) ?
-            NULL :
-            (table->values + table->values_available[--table->num_values_available]);
 }
 
 static __rte_always_inline void
-__gps_i_neighbor_table_return_entry(struct gps_i_neighbor_table *table,
+__gps_i_neighbor_table_return_entry(struct rte_mempool *mempool,
         struct gps_i_neighbor_info *entry) {
+    DEBUG("return entry: %p", entry);
 #ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    DEBUG("Return entry: %zd", entry - table->values);
+    memset(entry, 0xBF, sizeof(*entry));
 #endif
-    table->values_available[table->num_values_available++] = (int32_t) (entry - table->values);
+    rte_mempool_put(mempool, entry);
+
 }
 
 void
 gps_i_neighbor_table_return_entry(struct gps_i_neighbor_table *table,
         struct gps_i_neighbor_info *entry) {
-    __gps_i_neighbor_table_return_entry(table, entry);
+    __gps_i_neighbor_table_return_entry(table->values, entry);
 }
 
-static __rte_always_inline void
-__gps_i_neighbor_table_add_to_free(struct gps_i_neighbor_table *table,
-        struct gps_i_neighbor_info *entry) {
-    if (entry == NULL) return;
-    uint32_t end = table->entries + NEIGHBOR_TABLE_ENTRIES_EXTRA + NEIGHBOR_TABLE_ENTRIES_PADDING;
-    uint32_t to_add = end - (++table->num_values_to_free);
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    DEBUG("Add to free: %zd, at position: %" PRIu32, entry - table->values, to_add);
-#endif
-    table->values_available[to_add] = (int32_t) (entry - table->values);
-}
-
-int32_t
+struct gps_i_neighbor_info *
 gps_i_neighbor_table_set(struct gps_i_neighbor_table * table,
         const struct gps_na *na, struct gps_i_neighbor_info *info) {
     struct gps_i_neighbor_info *val_orig;
     int32_t ret;
-
+#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
+    char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE],
+            orig_info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+#endif
     ret = rte_hash_add_key_data_x(table->keys, na, info, (void **) &val_orig);
-    if (ret < 0) return ret;
-
-    // place the original entries to be freed
-    __gps_i_neighbor_table_add_to_free(table, val_orig);
-
-    return ret;
+    if (ret < 0) {
+        DEBUG("add key na=%s, val=%s [%p], ret=%" PRIi32,
+                gps_na_format(na_buf, sizeof (na_buf), na),
+                info == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info),
+                info, ret);
+        return info;
+    } else {
+        DEBUG("add key na=%s, val=%s [%p], ret=%" PRIi32 ", orig_val=%s [%p]",
+                gps_na_format(na_buf, sizeof (na_buf), na),
+                info == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info),
+                info, ret,
+                val_orig == NULL ? "" : gps_i_neighbor_info_format(orig_info_buf, sizeof (orig_info_buf), val_orig),
+                val_orig);
+        // place the original entries to be freed
+        if (likely(val_orig != NULL)) {
+            if (likely(rte_ring_enqueue(table->values_to_free, val_orig) == 0)) {
+                DEBUG("add %p to values_to_free", val_orig);
+                return NULL;
+            } else {
+                return val_orig;
+            }
+        } else {
+            return NULL;
+        }
+    }
 }
 
 int32_t
@@ -178,65 +177,40 @@ gps_i_neighbor_table_delete(struct gps_i_neighbor_table * table,
         const struct gps_na *na) {
     int32_t ret;
     struct gps_i_neighbor_info *data;
-    ret = rte_hash_del_key_x(table->keys, na, (void **) &data);
 #ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
     char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+#endif
+
+    ret = rte_hash_del_key_x(table->keys, na, (void **) &data);
     if (ret < 0) {
         DEBUG("delete key na=%s, ret=%" PRIi32,
                 gps_na_format(na_buf, sizeof (na_buf), na),
                 ret);
     } else {
-        DEBUG("delete key na=%s, data=%s (%zd), ret=%" PRIi32,
+        DEBUG("delete key na=%s, data=%s [%p], ret=%" PRIi32,
                 gps_na_format(na_buf, sizeof (na_buf), na),
                 data == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), data),
-                data - table->values,
+                data,
                 ret);
+        // Mark ret for to free
+        rte_ring_enqueue(table->key_positions_to_free, (void *) ((uintptr_t) ret));
     }
-#endif
-    if (ret < 0) return ret;
 
-
-    // Mark ret for to free
-    table->keys_to_free[table->num_keys_to_free++] = ret;
     return ret;
 }
 
 void
 gps_i_neighbor_table_cleanup(struct gps_i_neighbor_table * table) {
-    uint32_t end = table->entries + NEIGHBOR_TABLE_ENTRIES_EXTRA + NEIGHBOR_TABLE_ENTRIES_PADDING;
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    char info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
-    struct gps_i_neighbor_info *data;
-#endif
-
-    // free values
-    while (table->num_values_to_free > 0) {
-        uint32_t id_to_free = end - (table->num_values_to_free--);
-        uint32_t id_to_add = table->num_values_available++;
-        table->values_available[id_to_add] = table->values_available[id_to_free];
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-        data = &table->values[table->values_available[id_to_free]];
-        DEBUG("move value from %" PRIu32 " to %" PRIu32 ", slot at %" PRIi32 " %s (%zd)",
-                id_to_free,
-                id_to_add,
-                table->values_available[id_to_free],
-                data == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), data),
-                data - table->values);
-#endif
+    struct gps_i_neighbor_info *value_to_free;
+    uintptr_t position_to_free;
+    while (rte_ring_dequeue(table->values_to_free, (void **) &value_to_free) == 0) {
+        if (likely(value_to_free != NULL)) {
+            __gps_i_neighbor_table_return_entry(table->values, value_to_free);
+        }
     }
-
-    struct gps_i_neighbor_info *value;
-    // free keys and corresponding values
-    while (table->num_keys_to_free > 0) {
-        int32_t key_to_free = table->keys_to_free[--table->num_keys_to_free];
-        rte_hash_free_key_with_position_x(table->keys, key_to_free, (void **) &value);
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-        DEBUG("Free key at %" PRIi32 ", data=%s (%zd)",
-                key_to_free,
-                value == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), value),
-                value - table->values);
-#endif
-
-        if (value != NULL) __gps_i_neighbor_table_return_entry(table, value);
+    while (rte_ring_dequeue(table->key_positions_to_free, (void **) &position_to_free) == 0) {
+        rte_hash_free_key_with_position_x(table->keys, position_to_free, (void **) &value_to_free);
+        DEBUG("free key position: %u", (unsigned) position_to_free);
+        if (likely(value_to_free != NULL)) __gps_i_neighbor_table_return_entry(table->values, value_to_free);
     }
 }

@@ -12,13 +12,15 @@
 #include <gps_na.h>
 #include <rte_ether.h>
 #include "rte_hash.h"
+#include <rte_mempool.h>
+#include <rte_ring.h>
+#include <stdarg.h>
 #include <stdbool.h>
-#include <linux_list.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+    
     struct gps_i_neighbor_info {
         struct ether_addr ether;
         uint16_t port;
@@ -47,17 +49,10 @@ extern "C" {
 #define NEIGHBOR_TABLE_ENTRIES_PADDING 8
 
     struct gps_i_neighbor_table {
-        uint32_t entries;
         struct rte_hash_x *keys;
-        struct gps_i_neighbor_info *values;
-        int32_t *keys_to_free;
-        uint32_t num_keys_to_free;
-        // 0 to num_values_available - 1: value slots available
-        // value_entries = entries + NEIGHBOR_TABLE_ENTRIES_EXTRA
-        // total_entries = entries + padding
-        // total_entries - 1 - num_values_to_free to total_entries - 1: values slots to free
-        int32_t *values_available;
-        uint32_t num_values_available, num_values_to_free;
+        struct rte_mempool *values;
+        struct rte_ring *key_positions_to_free;
+        struct rte_ring *values_to_free;
     };
 
     /**
@@ -70,7 +65,9 @@ extern "C" {
      *   A string identifying the type of allocated objects (useful for debug
      *   purposes, such as identifying the cause of a memory leak). Can be NULL.
      * @param entries 
-     *   The number of entries to create. Better use 2^n-1 for optimal memory utilization.
+     *   The number of entries to create. Should be 2^n-1.
+     * @param values_to_free
+     *   The size of ring values_to_free. Should be 2^n.
      * @param socket_id 
      *   The socket id.
      * @return 
@@ -78,7 +75,8 @@ extern "C" {
      *   - NULL on error.
      */
     struct gps_i_neighbor_table *
-    gps_i_neighbor_table_create(const char *type, uint32_t entries, unsigned socket_id);
+    gps_i_neighbor_table_create(const char *type, uint32_t entries,
+            unsigned values_to_free, unsigned socket_id);
 
     /**
      * Gets an empty slot to store the neighbor info.
@@ -104,7 +102,6 @@ extern "C" {
     void
     gps_i_neighbor_table_return_entry(struct gps_i_neighbor_table *table,
             struct gps_i_neighbor_info *entry);
-
     /**
      * Add an entry into the neighbor table.
      * 
@@ -119,10 +116,11 @@ extern "C" {
      * @param info 
      *   The info to be stored.
      * @return 
-     *   - The position added/set. 
-     *   - Less than 0 on failure.
+     *   - NULL when successfully added.
+     *   - == info when add failed.
+     *   - == orig_val when values_to_free is full.
      */
-    int32_t
+    struct gps_i_neighbor_info *
     gps_i_neighbor_table_set(struct gps_i_neighbor_table * table,
             const struct gps_na *na, struct gps_i_neighbor_info *info);
 
@@ -187,68 +185,9 @@ extern "C" {
     void
     gps_i_neighbor_table_destroy(struct gps_i_neighbor_table * table);
 
-    static __rte_always_inline void
-    gps_i_neighbor_table_print_available(struct gps_i_neighbor_table *table, FILE *stream) {
-        uint32_t i;
-        uint32_t end = table->entries + NEIGHBOR_TABLE_ENTRIES_EXTRA + NEIGHBOR_TABLE_ENTRIES_PADDING;
-
-        for (i = 0; i < end; i++) {
-            fprintf(stream, "[%" PRIu32, i);
-            if (i < table->num_values_available) {
-                fprintf(stream, ",A");
-            }
-            if (i >= end - table->num_values_to_free) {
-                fprintf(stream, ",F");
-            }
-            fprintf(stream, "]%" PRIi32 " ", table->values_available[i]);
-        }
-        fprintf(stream, "\n");
-    }
-
-    static __rte_always_inline void
-    gps_i_neighbor_table_print_keys_to_free(struct gps_i_neighbor_table *table, FILE *stream) {
-        uint32_t i;
-        int32_t position;
-        const struct gps_na *na;
-        struct gps_i_neighbor_info *data;
-        char na_buf[GPS_NA_FMT_SIZE];
-
-        fprintf(stream, ">>> To frees: \n");
-        for (i = 0; i < table->num_keys_to_free; i++) {
-            position = table->keys_to_free[i];
-            rte_hash_get_key_data_with_position_x(table->keys, position, (const void **) &na, (void **) &data);
-
-            fprintf(stream, "  %s (%d)\n",
-                    gps_na_format(na_buf, sizeof (na_buf), na),
-                    position);
-        }
-        fprintf(stream, ">>>>>>>>>>\n");
-    }
-
-    static __rte_always_inline void
-    gps_i_neighbor_table_print(struct gps_i_neighbor_table *table, FILE *stream) {
-        uint32_t next = 0;
-        int32_t position;
-        const struct gps_na *na;
-        struct gps_i_neighbor_info *data;
-        char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
-
-        fprintf(stream, ">>> Table: \n");
-        for (;;) {
-            position = rte_hash_iterate_x(table->keys, (const void **) &na, (void **) &data, &next);
-            if (position == -ENOENT)
-                break;
-
-            assert(position >= 0);
-            fprintf(stream, "  %s (%d) -> %s (%zd) \n",
-                    gps_na_format(na_buf, sizeof (na_buf), na),
-                    position,
-                    data == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), data),
-                    data - table->values);
-        }
-        fprintf(stream, ">>>>>>>>>>\n");
-
-    }
+    void
+    gps_i_neighbor_table_print(struct gps_i_neighbor_table *table,
+            FILE *stream, const char *fmt, ...);
 
 
 #ifdef __cplusplus

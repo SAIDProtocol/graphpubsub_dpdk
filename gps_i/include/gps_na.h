@@ -11,6 +11,7 @@
 #include <rte_byteorder.h>
 #include <rte_common.h>
 #include <rte_memcpy.h>
+#include <rte_jhash.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <inttypes.h>
@@ -19,7 +20,7 @@
 extern "C" {
 #endif
 
-#define GPS_NA_FMT_SIZE (9)
+#define GPS_NA_FMT_SIZE (11)
 
     struct gps_na {
         uint32_t value;
@@ -45,7 +46,7 @@ extern "C" {
 
     static __rte_always_inline int
     gps_na_cmp(const struct gps_na *na1, const struct gps_na *na2) {
-        return (int) na1->value - (int) na2->value;
+        return (uint32_t) na1->value - (uint32_t) na2->value;
     }
 
     static __rte_always_inline bool
@@ -55,10 +56,17 @@ extern "C" {
 
     static __rte_always_inline char *
     gps_na_format(char *buf, uint16_t size, const struct gps_na *na) {
-        snprintf(buf, size, "%08" PRIX32, rte_be_to_cpu_32(na->value));
+        snprintf(buf, size, "<%08" PRIX32 ">", rte_be_to_cpu_32(na->value));
         return buf;
     }
-    
+
+    static inline uint32_t
+    gps_na_hash(const void *key, uint32_t key_len __rte_unused, uint32_t init_val) {
+//        printf("NA_HASH: key=%p\n", key);
+        return rte_jhash_1word(((const struct gps_na *)key)->value, init_val);
+    }
+
+
 #ifdef __cplusplus
 }
 #endif

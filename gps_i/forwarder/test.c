@@ -10,10 +10,12 @@
 #include <rte_mbuf.h>
 #include "gps_i_anno.h"
 
+void test_anno(void);
 extern void test_neighbor_table(void);
+extern void test_routing_table(void);
 void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 
-static void
+void
 test_anno(void) {
     printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__);
     printf("size of anno: %zd, prev_hop_na@%zd, next_hop_na@%zd, prio@%zd\n",
@@ -33,10 +35,10 @@ main(int argc, char **argv) {
     argc -= ret;
     argv += ret;
 
-    test_anno();
-    test_neighbor_table();
-    
-    
+    //    test_anno();
+    //    test_neighbor_table();
+    test_routing_table();
+
     return 0;
 }
 

@@ -20,7 +20,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-    
+
     struct gps_i_neighbor_info {
         struct ether_addr ether;
         uint16_t port;
@@ -45,9 +45,6 @@ extern "C" {
         return buf;
     }
 
-#define NEIGHBOR_TABLE_ENTRIES_EXTRA 8
-#define NEIGHBOR_TABLE_ENTRIES_PADDING 8
-
     struct gps_i_neighbor_table {
         struct rte_hash_x *keys;
         struct rte_mempool *values;
@@ -62,12 +59,11 @@ extern "C" {
      * but there can be multiple readers (lookups).
      * 
      * @param type
-     *   A string identifying the type of allocated objects (useful for debug
-     *   purposes, such as identifying the cause of a memory leak). Can be NULL.
+     *   A string identifying the type of allocated objects. Has to be unique in the system.
      * @param entries 
      *   The number of entries to create. Should be 2^n-1.
-     * @param values_to_free
-     *   The size of ring values_to_free. Should be 2^n.
+     * @param value_slots
+     *   The element count of mempool values. Should be 2^n.
      * @param socket_id 
      *   The socket id.
      * @return 
@@ -76,7 +72,7 @@ extern "C" {
      */
     struct gps_i_neighbor_table *
     gps_i_neighbor_table_create(const char *type, uint32_t entries,
-            unsigned values_to_free, unsigned socket_id);
+            unsigned value_slots, unsigned socket_id);
 
     /**
      * Gets an empty slot to store the neighbor info.
@@ -102,10 +98,11 @@ extern "C" {
     void
     gps_i_neighbor_table_return_entry(struct gps_i_neighbor_table *table,
             struct gps_i_neighbor_info *entry);
+
     /**
      * Add an entry into the neighbor table.
      * 
-     * Using lock-free algorithms. Can do add/remove/lookup at the same time.
+     * Using RCU flavor.
      * Need to call cleanup when other threads have claimed quiescent.
      * The original value will be freed on cleanup.
      * 
@@ -154,7 +151,7 @@ extern "C" {
      *   - The neighbor entry.
      *   - NULL if entry not exist.
      */
-    static __rte_always_inline struct gps_i_neighbor_info *
+    static __rte_always_inline const struct gps_i_neighbor_info *
     gps_i_neighbor_table_lookup(const struct gps_i_neighbor_table * table,
             const struct gps_na *na) {
         struct gps_i_neighbor_info *value;
@@ -185,6 +182,19 @@ extern "C" {
     void
     gps_i_neighbor_table_destroy(struct gps_i_neighbor_table * table);
 
+
+    /**
+     * Dumps the information of the neighbor table.
+     * 
+     * @param table
+     *   The table to be printed.
+     * @param stream
+     *   The stream the table to be printed on.
+     * @param fmt
+     *   The format of the leading string.
+     * @param ...
+     *   The variables of the leading string.
+     */
     void
     gps_i_neighbor_table_print(struct gps_i_neighbor_table *table,
             FILE *stream, const char *fmt, ...);

@@ -6,7 +6,6 @@
 // */
 #include <inttypes.h>
 #include <rte_cycles.h>
-#include <rte_hash.h>
 #include <rte_ip.h>
 #include <rte_lcore.h>
 #include <rte_malloc.h>
@@ -16,8 +15,6 @@
 #include <urcu-qsbr.h>
 #include "gps_i_neighbor_table.h"
 
-#define DEFAULT_NEIGHBOR_TABLE_SIZE 1023
-#define DEFAULT_WRAP_SIZE 16
 #define RTE_LOGTYPE_TEST_NEIGHBOR_TABLE RTE_LOGTYPE_USER1
 
 
@@ -58,6 +55,7 @@ test_neighbor_table_basic_1(void) {
     char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
 
     struct gps_i_neighbor_info *info, *ret_info;
+    const struct gps_i_neighbor_info *const_info;
     struct gps_na nas[15], *na_p, na;
 
     gps_na_set(nas + 0, 0xdeadbeef);
@@ -101,11 +99,11 @@ test_neighbor_table_basic_1(void) {
 
     for (i = 0; i < RTE_DIM(nas); i++) {
         gps_na_copy(&na, nas + i);
-        info = gps_i_neighbor_table_lookup(table, &na);
+        const_info = gps_i_neighbor_table_lookup(table, &na);
         DEBUG("Lookup %s, ret=%s [%p]",
                 gps_na_format(na_buf, sizeof (na_buf), &na),
-                info == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info),
-                info);
+                const_info == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), const_info),
+                const_info);
     }
     printf("\n");
 
@@ -117,6 +115,7 @@ test_neighbor_table_basic_1(void) {
     info = gps_i_neighbor_table_get_entry(table);
     DEBUG("Get entry, info=%p", info);
     if (info == NULL) FAIL("Cannot get info!");
+    memset(info, 24, sizeof (*info));
     ret_info = gps_i_neighbor_table_set(table, &na, info);
     DEBUG("set %s->%s, ret=%p",
             gps_na_format(na_buf, sizeof (na_buf), &na),
@@ -145,6 +144,7 @@ test_neighbor_table_basic_1(void) {
     info = gps_i_neighbor_table_get_entry(table);
     DEBUG("Get entry, info=%p", info);
     if (info == NULL) FAIL("Cannot get info!");
+    memset(info, 23, sizeof (*info));
     na_p = &na;
     ret_info = gps_i_neighbor_table_set(table, na_p, info);
     DEBUG("set %s->%s, ret=%p",
@@ -174,6 +174,7 @@ test_neighbor_table_basic_2(void) {
         .use_ip = true
     };
     struct gps_i_neighbor_info *result, *result2;
+    const struct gps_i_neighbor_info *const_result;
     struct gps_na na;
     gps_na_set(&na, 0x12345678);
 
@@ -256,25 +257,25 @@ test_neighbor_table_basic_2(void) {
     printf("\n");
 
     gps_na_set(&na, 0x12345678);
-    result = gps_i_neighbor_table_lookup(table, &na);
+    const_result = gps_i_neighbor_table_lookup(table, &na);
     DEBUG("lookup %s -> %s [%p]",
             gps_na_format(na_buf, sizeof (na_buf), &na),
-            result == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), result),
-            result);
+            const_result == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), const_result),
+            const_result);
 
     gps_na_set(&na, 0x87654321);
-    result = gps_i_neighbor_table_lookup(table, &na);
+    const_result = gps_i_neighbor_table_lookup(table, &na);
     DEBUG("lookup %s -> %s [%p]",
             gps_na_format(na_buf, sizeof (na_buf), &na),
-            result == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), result),
-            result);
+            const_result == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), const_result),
+            const_result);
 
     gps_na_set(&na, 0x77654321);
-    result = gps_i_neighbor_table_lookup(table, &na);
+    const_result = gps_i_neighbor_table_lookup(table, &na);
     DEBUG("lookup %s -> %s [%p]",
             gps_na_format(na_buf, sizeof (na_buf), &na),
-            result == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), result),
-            result);
+            const_result == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), const_result),
+            const_result);
     printf("\n");
 
 
@@ -294,10 +295,10 @@ test_neighbor_table_basic_2(void) {
     printf("\n");
 
 
-    result = gps_i_neighbor_table_lookup(table, &na);
+    const_result = gps_i_neighbor_table_lookup(table, &na);
     DEBUG("lookup %s -> [%p]",
             gps_na_format(na_buf, sizeof (na_buf), &na),
-            result);
+            const_result);
     printf("\n");
 
     gps_na_set(&na, 0x87654321);
@@ -308,10 +309,10 @@ test_neighbor_table_basic_2(void) {
     gps_i_neighbor_table_cleanup(table);
     printf("\n");
 
-    result = gps_i_neighbor_table_lookup(table, &na);
+    const_result = gps_i_neighbor_table_lookup(table, &na);
     DEBUG("lookup %s -> [%p]",
             gps_na_format(na_buf, sizeof (na_buf), &na),
-            result);
+            const_result);
     printf("\n");
 
     gps_i_neighbor_table_destroy(table);
@@ -335,7 +336,7 @@ test_neighbor_table_rcu_slave_1(void *param) {
     urcu_qsbr_register_thread();
 
     struct rcu_param *param_p = (struct rcu_param *) param;
-    struct gps_i_neighbor_info * results[RTE_DIM(param_p->nas)];
+    const struct gps_i_neighbor_info * results[RTE_DIM(param_p->nas)];
     uint32_t i;
 
     while (param_p->state != STATE_LOOKUP_1);
@@ -483,33 +484,3 @@ test_neighbor_table(void) {
     dump_mem("dmp_test_neighbor_table_3.txt");
 }
 
-void
-gps_i_neighbor_table_print(struct gps_i_neighbor_table *table,
-        FILE *stream, const char *fmt, ...) {
-    uint32_t next = 0;
-    int32_t position;
-    const struct gps_na *na;
-    struct gps_i_neighbor_info *data;
-    va_list valist;
-
-    char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
-
-    va_start(valist, fmt);
-    vfprintf(stream, fmt, valist);
-    va_end(valist);
-    fprintf(stream, "\n");
-    for (;;) {
-        position = rte_hash_iterate_x(table->keys, (const void **) &na, (void **) &data, &next);
-        if (position == -ENOENT)
-            break;
-
-        assert(position >= 0);
-        fprintf(stream, "  %s (%d) -> %s [%p] \n",
-                gps_na_format(na_buf, sizeof (na_buf), na),
-                position,
-                data == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), data),
-                data);
-    }
-    fprintf(stream, ">>>>>>>>>>\n");
-
-}

@@ -6,12 +6,12 @@ ifeq ($(TEST),)
     # binary name
     APP = gps_i_forwarder
     # all source are stored in SRCS-y
-    SRCS-y := main.c gps_i_neighbor_table.c gps_i_routing_table.c rte_cuckoo_hash.c
+    SRCS-y := main.c 
 else
     APP = test_gps_i_forwarder
-    SRCS-y := gps_i_neighbor_table.c gps_i_routing_table.c rte_cuckoo_hash.c
-    SRCS-y += test.c test_gps_i_neighbor_table.c test_gps_i_routing_table.c
+    SRCS-y := test.c test_gps_i_neighbor_table.c test_gps_i_routing_table.c test_gps_i_gnrs_cache.c
 endif
+SRCS-y += gps_i_neighbor_table.c gps_i_routing_table.c  gps_i_gnrs_cache.c rte_cuckoo_hash.c
 
 # Build using pkg-config variables if possible
 $(shell pkg-config --exists libdpdk)

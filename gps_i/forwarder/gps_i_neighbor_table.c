@@ -1,8 +1,6 @@
 /* 
  * File:   gps_i_neighbor_table.c
  * Author: Jiachen Chen
- *
- * Created on April 14, 2019, 2:53 AM
  */
 
 #include <rte_branch_prediction.h>

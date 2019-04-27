@@ -1,5 +1,5 @@
 /* 
- * File:   headers.h
+ * File:   gps_headers.h
  * Author: Jiachen Chen
  *
  * Created on April 11, 2019, 4:43 PM
@@ -211,6 +211,11 @@ extern "C" {
     static __rte_always_inline const struct gps_na *
     gps_pkt_publication_const_get_src_na(const void *pkt) {
         return gps_pkt_application_const_get_src_na(pkt);
+    }
+    
+    static __rte_always_inline bool
+    gps_pkt_publication_const_is_upstream(const void *pkt) {
+        return gps_na_is_empty(gps_pkt_publication_const_get_src_na(pkt));
     }
 
     static __rte_always_inline const struct gps_na *

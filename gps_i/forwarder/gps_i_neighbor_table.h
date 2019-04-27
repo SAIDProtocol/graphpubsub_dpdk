@@ -1,8 +1,6 @@
 /* 
  * File:   gps_i_neighbor_table.h
  * Author: Jiachen Chen
- *
- * Created on April 14, 2019, 2:53 AM
  */
 
 #ifndef GPS_I_NEIGHBOR_TABLE_H
@@ -91,9 +89,8 @@ extern "C" {
      * 
      * @param table 
      *   The table that contains the entries.
-     * @return 
-     *   - The empty slot. 
-     *   - NULL if no slot available.
+     * @param entry
+     *   The entry to be returned. Has to be got from the table.
      */
     void
     gps_i_neighbor_table_return_entry(struct gps_i_neighbor_table *table,

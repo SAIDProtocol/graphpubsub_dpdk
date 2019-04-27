@@ -1,5 +1,5 @@
 /* 
- * File:   guid.h
+ * File:   gps_guid.h
  * Author: Jiachen Chen
  *
  * Created on April 12, 2019, 9:35 AM
@@ -109,7 +109,7 @@ extern "C" {
         } *x = key;
         return rte_jhash_2words(x->vals[0], x->vals[1], init_val);
 #else
-        return rte_jhash(key GPS_GUID_SIZE, init_val);
+        return rte_jhash(key, GPS_GUID_SIZE, init_val);
 #endif
 
     }

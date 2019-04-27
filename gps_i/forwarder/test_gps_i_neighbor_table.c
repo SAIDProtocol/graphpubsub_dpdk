@@ -1,9 +1,7 @@
-///* 
-// * File:   test_neighbor_table.c
-// * Author: Jiachen Chen
-// *
-// * Created on April 14, 2019, 2:56 AM
-// */
+/* 
+ * File:   test_gps_i_neighbor_table.c
+ * Author: Jiachen Chen
+ */
 #include <inttypes.h>
 #include <rte_cycles.h>
 #include <rte_ip.h>

@@ -1,8 +1,6 @@
 /* 
  * File:   gps_i_routing_table.h
- * Author: root
- *
- * Created on April 26, 2019, 11:58 AM
+ * Author: Jiachen Chen
  */
 
 #ifndef GPS_I_ROUTING_TABLE_H
@@ -78,7 +76,7 @@ extern "C" {
      * @param distance
      *   The distance to destination via next hop.
      * @return 
-     *   - 0 when successfully added.
+     *   - >=0 when successfully added.
      *   - Less than 0 on failure.
      */
     int32_t
@@ -98,7 +96,7 @@ extern "C" {
      * @param next_hop_na
      *   The next hop na.
      * @return 
-     *   - 0 when successfully deleted.
+     *   - >=0 when successfully deleted.
      *   - Less than 0 on failure.
      */
     int32_t
@@ -115,7 +113,7 @@ extern "C" {
      * @param dst_na 
      *   The destination na.
      * @return 
-     *   - 0 when successfully deleted.
+     *   - >=0 when successfully deleted.
      *   - Less than 0 on failure.
      */
     int32_t

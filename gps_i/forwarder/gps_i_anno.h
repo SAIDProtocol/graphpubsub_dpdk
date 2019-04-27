@@ -21,6 +21,7 @@ extern "C" {
         struct gps_na prev_hop_na;
         struct gps_na next_hop_na;
         uint8_t prio;
+        uint8_t is_control:1;
     } __rte_aligned(RTE_MBUF_PRIV_ALIGN);
 
 

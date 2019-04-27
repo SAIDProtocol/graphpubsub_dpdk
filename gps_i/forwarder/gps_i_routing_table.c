@@ -1,7 +1,6 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
+/* 
+ * File:   gps_i_routing_table.c
+ * Author: Jiachen Chen
  */
 #include "gps_i_routing_table.h"
 #include <assert.h>
@@ -293,16 +292,17 @@ gps_i_routing_table_delete_dst(struct gps_i_routing_table * table,
     char na_buf[GPS_NA_FMT_SIZE];
 #endif
     struct gps_i_routing_entry *orig_entry;
-    int ret;
+    int position, ret;
 
-    ret = rte_hash_del_key_x(table->keys, dst_na, (void **) &orig_entry);
+    position = rte_hash_del_key_x(table->keys, dst_na, (void **) &orig_entry);
     DEBUG("delete key %s, got: %" PRIi32 ", orig_entry=%p",
-            gps_na_format(na_buf, sizeof (na_buf), dst_na), ret, orig_entry);
-    if (ret >= 0) {
-        DEBUG("Add %" PRIi32 " to key_positions_to_free.", ret);
-        ret = rte_ring_enqueue(table->key_positions_to_free, (void *) ((intptr_t) ret));
+            gps_na_format(na_buf, sizeof (na_buf), dst_na), position, orig_entry);
+    if (position >= 0) {
+        ret = rte_ring_enqueue(table->key_positions_to_free, (void *) ((intptr_t) position));
+        DEBUG("Add %" PRIi32 " to key_positions_to_free, ret=%" PRIi32 ".", position, ret);
+        assert(ret == 0);
     }
-    return ret;
+    return position;
 }
 
 void
@@ -354,7 +354,6 @@ gps_i_routing_table_destroy(struct gps_i_routing_table * table) {
 void
 gps_i_routing_table_print(struct gps_i_routing_table *table,
         FILE *stream, const char *fmt, ...) {
-    RTE_SET_USED(table);
     const struct gps_na *dst_na;
     struct gps_i_routing_entry *entry;
     int position;

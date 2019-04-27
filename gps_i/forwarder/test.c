@@ -1,8 +1,6 @@
 /* 
- * File:   main.c
+ * File:   test.c
  * Author: Jiachen Chen
- *
- * Created on April 11, 2019, 4:43 PM
  */
 
 #include <rte_common.h>
@@ -13,6 +11,7 @@
 void test_anno(void);
 extern void test_neighbor_table(void);
 extern void test_routing_table(void);
+extern void test_gnrs_cache(void);
 void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 
 void
@@ -37,7 +36,8 @@ main(int argc, char **argv) {
 
     //    test_anno();
     //    test_neighbor_table();
-    test_routing_table();
+    //    test_routing_table();
+    test_gnrs_cache();
 
     return 0;
 }

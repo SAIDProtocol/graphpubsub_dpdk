@@ -48,8 +48,6 @@ gps_i_routing_table_create(const char *type, uint32_t entries,
     char tmp_name[RTE_MEMZONE_NAMESIZE];
     struct gps_i_routing_table *table;
     DEBUG("entries=%" PRIu32 ", values_to_free=%" PRIu32, entries, values_to_free);
-    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "RTK_%s", type);
-    DEBUG("name for key: %s", tmp_name);
     struct rte_hash_parameters_x params = {
         .entries = entries,
         .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF,
@@ -61,11 +59,19 @@ gps_i_routing_table_create(const char *type, uint32_t entries,
         .socket_id = socket_id
     };
 
-    table = rte_zmalloc_socket(type, sizeof (struct gps_i_routing_table),
+    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "RT_%s", type);
+    DEBUG("name for table: %s", tmp_name);
+    table = rte_zmalloc_socket(tmp_name, sizeof (struct gps_i_routing_table),
             RTE_CACHE_LINE_SIZE, socket_id);
-    if (table == NULL) goto fail;
+    if (unlikely(table == NULL)) {
+        DEBUG("fail to malloc table, reason: %s", rte_strerror(rte_errno));
+        goto fail;
+    }
+    DEBUG("table=%p", table);
     table->socket_id = socket_id;
 
+    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "RTK_%s", type);
+    DEBUG("name for key: %s", params.name);
     table->keys = rte_hash_create_x(&params);
     if (unlikely(table->keys == NULL)) {
         DEBUG("fail to create keys, reason: %s", rte_strerror(rte_errno));
@@ -97,10 +103,20 @@ gps_i_routing_table_create(const char *type, uint32_t entries,
 
 fail:
     if (table != NULL) {
-        if (table->keys != NULL) rte_hash_free_x(table->keys);
-        if (table->key_positions_to_free != NULL) rte_ring_free(table->key_positions_to_free);
-        if (table->values_to_free != NULL) rte_ring_free(table->values_to_free);
+        if (table->keys != NULL) {
+            DEBUG("free keys=%p", table->keys);
+            rte_hash_free_x(table->keys);
+        }
+        if (table->key_positions_to_free != NULL) {
+            DEBUG("free key_positions_to_free=%p", table->key_positions_to_free);
+            rte_ring_free(table->key_positions_to_free);
+        }
+        if (table->values_to_free != NULL) {
+            DEBUG("free values_to_free=%p", table->values_to_free);
+            rte_ring_free(table->values_to_free);
+        }
         memset(table, 0, sizeof (*table));
+        DEBUG("free table=%p", table);
         rte_free(table);
     }
     return NULL;

@@ -17,18 +17,9 @@
 #define _FAIL(fmt, ...) rte_exit(EXIT_FAILURE, "[%s():%d] " fmt "%.0s\n", __FUNCTION__, __LINE__, __VA_ARGS__)
 #define DEBUG_HEAD() printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__)
 
-extern void print_buf(const void *buf, uint32_t size, uint32_t wrap);
+void print_buf(const void *buf, uint32_t size, uint32_t wrap);
+void dump_mem(const char *file_name);
 void test_routing_table(void);
-
-static __rte_always_inline void dump_mem(const char *file_name) {
-    FILE *fp = fopen(file_name, "w");
-    if (fp == NULL) FAIL("Cannot open file for dump: %s", file_name);
-    rte_malloc_dump_heaps(fp);
-    rte_memzone_dump(fp);
-    rte_mempool_list_dump(fp);
-    fflush(fp);
-    fclose(fp);
-}
 
 static void
 test_routing_table_basic_1(void) {

@@ -1,23 +1,20 @@
 /* 
  * File:   main.c
  * Author: Jiachen Chen
- *
- * Created on April 11, 2019, 4:43 PM
  */
 
 
-#include <inttypes.h>
+//#include <inttypes.h>
 #include <rte_common.h>
-#include <rte_branch_prediction.h>
-#include <rte_cycles.h>
+//#include <rte_branch_prediction.h>
+//#include <rte_cycles.h>
 #include <rte_eal.h>
-#include <rte_hash.h>
-#include <rte_mbuf.h>
-#include <rte_lcore.h>
-#include <stdbool.h>
-#include "gps_i_anno.h"
-#include <gps_headers.h>
-#include "gps_i_neighbor_table.h"
+//#include <rte_mbuf.h>
+//#include <rte_lcore.h>
+//#include <stdbool.h>
+//#include "gps_i_anno.h"
+//#include <gps_headers.h>
+//#include "gps_i_forwarder_common.h"
 
 int main(int argc, char **argv) {
     int ret;
@@ -27,9 +24,7 @@ int main(int argc, char **argv) {
     argc -= ret;
     argv += ret;
 
-    printf("gps_pkt size: %zd\n", sizeof (struct gps_pkt_lsa));
-    printf("gps_anno size: %zd\n", sizeof (struct gps_i_anno));
-
+    
 
     return 0;
 }

@@ -7,7 +7,7 @@
 #include <rte_errno.h>
 #include <rte_malloc.h>
 
-#define GPS_I_GNRS_CACHE_DEBUG
+//#define GPS_I_GNRS_CACHE_DEBUG
 
 #ifdef GPS_I_GNRS_CACHE_DEBUG
 #include <rte_log.h>
@@ -26,10 +26,6 @@ gps_i_gnrs_cache_create(const char *type, uint32_t entries,
 
     struct gps_i_gnrs_cache *cache = NULL;
     char tmp_name[RTE_MEMZONE_NAMESIZE];
-    DEBUG("entries=%" PRIu32 ", value_slots=%" PRIu32, entries, value_slots);
-
-    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "GNRSK_%s", type);
-    DEBUG("name for key: %s", tmp_name);
     struct rte_hash_parameters_x params = {
         .entries = entries,
         .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY_LF,
@@ -41,10 +37,20 @@ gps_i_gnrs_cache_create(const char *type, uint32_t entries,
         .socket_id = socket_id
     };
 
-    cache = rte_zmalloc_socket(type, sizeof (struct gps_i_gnrs_cache),
-            RTE_CACHE_LINE_SIZE, socket_id);
-    if (cache == NULL) goto fail;
+    DEBUG("entries=%" PRIu32 ", value_slots=%" PRIu32, entries, value_slots);
 
+    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "GNRS_%s", type);
+    DEBUG("name for cache: %s", tmp_name);
+    cache = rte_zmalloc_socket(tmp_name, sizeof (struct gps_i_gnrs_cache),
+            RTE_CACHE_LINE_SIZE, socket_id);
+    if (unlikely(cache == NULL)) {
+        DEBUG("fail to create cache, reason: %s", rte_strerror(rte_errno));
+        goto fail;
+    }
+    DEBUG("cache=%p", cache);
+
+    snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "GNRSK_%s", type);
+    DEBUG("name for key: %s", params.name);
     cache->keys = rte_hash_create_x(&params);
     if (unlikely(cache->keys == NULL)) {
         DEBUG("fail to create keys, reason: %s", rte_strerror(rte_errno));
@@ -91,11 +97,24 @@ gps_i_gnrs_cache_create(const char *type, uint32_t entries,
 
 fail:
     if (cache != NULL) {
-        if (cache->keys != NULL) rte_hash_free_x(cache->keys);
-        if (cache->values != NULL) rte_mempool_free(cache->values);
-        if (cache->key_positions_to_free != NULL) rte_ring_free(cache->key_positions_to_free);
-        if (cache->values_to_free != NULL) rte_ring_free(cache->values_to_free);
+        if (cache->keys != NULL) {
+            DEBUG("free keys=%p", cache->keys);
+            rte_hash_free_x(cache->keys);
+        }
+        if (cache->values != NULL) {
+            DEBUG("free values=%p", cache->values);
+            rte_mempool_free(cache->values);
+        }
+        if (cache->key_positions_to_free != NULL) {
+            DEBUG("free key_positions_to_free=%p", cache->key_positions_to_free);
+            rte_ring_free(cache->key_positions_to_free);
+        }
+        if (cache->values_to_free != NULL) {
+            DEBUG("free values_to_free=%p", cache->values_to_free);
+            rte_ring_free(cache->values_to_free);
+        }
         memset(cache, 0, sizeof (*cache));
+        DEBUG("free cache=%p", cache);
         rte_free(cache);
     }
     return NULL;
@@ -104,10 +123,6 @@ fail:
 int32_t
 gps_i_gnrs_cache_set(struct gps_i_gnrs_cache * cache,
         const struct gps_guid *guid, const struct gps_na *na, uint32_t version) {
-    RTE_SET_USED(na);
-    RTE_SET_USED(version);
-
-
     struct gps_i_gnrs_cache_entry *entry = NULL, *new_entry, *orig_entry;
     int position, ret;
 #ifdef GPS_I_GNRS_CACHE_DEBUG

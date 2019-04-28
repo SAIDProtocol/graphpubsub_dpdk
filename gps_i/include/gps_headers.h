@@ -21,8 +21,8 @@
 extern "C" {
 #endif
 
-#define ETHER_PROTO_TYPE 0x27c0
-#define IP_PROTO_TYPE 0x90
+#define GPS_PROTO_TYPE_ETHER 0x27c0
+#define GPS_PROTO_TYPE_IP 0x90
 
 #define GPS_PKT_TYPE_MASK_APPLICATION (0x80) // 1000 0000
 #define GPS_PKT_TYPE_MASK_GNRS (0xC0)  // 1100 0000

@@ -9,10 +9,12 @@
 #include "gps_i_anno.h"
 
 void test_anno(void);
-extern void test_neighbor_table(void);
-extern void test_routing_table(void);
-extern void test_gnrs_cache(void);
+void test_neighbor_table(void);
+void test_routing_table(void);
+void test_gnrs_cache(void);
+void test_forwarder_logic(void);
 void print_buf(const void *buf, uint32_t size, uint32_t wrap);
+void dump_mem(const char *file_name);
 
 void
 test_anno(void) {
@@ -37,7 +39,8 @@ main(int argc, char **argv) {
     //    test_anno();
     //    test_neighbor_table();
     //    test_routing_table();
-    test_gnrs_cache();
+    //    test_gnrs_cache();
+    test_forwarder_logic();
 
     return 0;
 }
@@ -54,4 +57,13 @@ print_buf(const void *buf, uint32_t size, uint32_t wrap) {
     }
 }
 
-
+void
+dump_mem(const char *file_name) {
+    FILE *fp = fopen(file_name, "w");
+    if (fp == NULL) rte_exit(EXIT_FAILURE, "Cannot open file for dump: %s", file_name);
+    rte_malloc_dump_heaps(fp);
+    rte_memzone_dump(fp);
+    rte_mempool_list_dump(fp);
+    fflush(fp);
+    fclose(fp);
+}

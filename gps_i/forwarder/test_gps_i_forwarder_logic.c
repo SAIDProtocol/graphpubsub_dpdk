@@ -782,17 +782,31 @@ generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *pr
     if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
     gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
     gps_pkt_publication_set_size(gps_hdr, 0);
-    gps_na_set(&na, 0);
-    gps_pkt_publication_set_src_na(gps_hdr, &na); // upstream
-    gps_pkt_publication_set_dst_na(gps_hdr, &na); // first hop
-    gps_guid_set(&guid, 0x12345678);
-    gps_pkt_publication_set_dst_guid(gps_hdr, &guid); // cannot find guid
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x12345678); //can find guid, can find nexthop na, self, rp does not serve
     print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
     rte_ring_enqueue(processor_ring, pkt);
 
-    DEBUG(">>>> publication upstream first hop, can find guid, can find nexthop na, self, rp serves");
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream not first hop, self, rp does not serve");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(&na, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_copy(gps_pkt_publication_get_dst_na(gps_hdr), &forwarder->my_na); // not first hop, self
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x12345678); // rp does not serve
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
 
     rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream first hop, can find guid, can find nexthop na, self, rp serves");
 }
 
 void

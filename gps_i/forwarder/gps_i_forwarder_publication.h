@@ -61,7 +61,9 @@ extern "C" {
                     target_na);
             if (target_na == NULL) {
                 DEBUG("Cannot find target_na, send to control ring");
-                rte_ring_enqueue(lcore->control_ring, pkt);
+                if (unlikely(!gps_i_forwarder_try_send_to_ring(&lcore->control_ring, pkt))) {
+                    DEBUG("control ring full, discard pkt: %p", pkt);
+                }
                 return;
             }
             gps_na_copy(dst_na, target_na);
@@ -119,7 +121,7 @@ extern "C" {
 
         data_len = rte_pktmbuf_data_len(pkt);
         if (unlikely(data_len < sizeof (struct gps_pkt_publication))) {
-            DEBUG("data_len(%" PRIu16 " < gps_pkt_publication size(%zd), free pkt %p", data_len, sizeof (struct gps_pkt_publication), pkt);
+            DEBUG("data_len(%" PRIu16 ") < gps_pkt_publication size(%zd), free pkt %p", data_len, sizeof (struct gps_pkt_publication), pkt);
             rte_pktmbuf_free(pkt);
             return;
         }
@@ -128,7 +130,7 @@ extern "C" {
         data_size = gps_pkt_publication_const_get_size(publication);
 
         if (unlikely(data_len < data_size + sizeof (struct gps_pkt_publication))) {
-            DEBUG("data_len(%" PRIu16 " < gps_pkt_publication size (%zd) + data size (%" PRIu32"), free pkt %p",
+            DEBUG("data_len(%" PRIu16 ") < gps_pkt_publication size (%zd) + data size (%" PRIu32"), free pkt %p",
                     data_len, sizeof (struct gps_pkt_publication), data_size, pkt);
             rte_pktmbuf_free(pkt);
             return;

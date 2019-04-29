@@ -156,7 +156,9 @@ success:
         }
         ether_addr_copy(&local_info->ether, &eth_hdr->s_addr);
         ether_addr_copy(&neighbor_info->ether, &eth_hdr->d_addr);
-        rte_ring_enqueue(lcore->outgoing_rings[neighbor_info->port], pkt);
+        if (unlikely(!gps_i_forwarder_try_send_to_ring(lcore->outgoing_rings + neighbor_info->port, pkt))) {
+            DEBUG("outgoing ring %" PRIu16 " full, discard pkt: %p", neighbor_info->port, pkt);
+        }
     }
 
 

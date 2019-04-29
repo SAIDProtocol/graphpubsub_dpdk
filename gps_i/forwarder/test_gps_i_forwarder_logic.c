@@ -37,7 +37,6 @@ void generator_decapsulation(struct rte_mempool *pkt_pool, struct rte_ring *proc
 void generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder);
 
 #define TEST_OUTGOING_RING_SIZE 3
-#define TEST_RING_SIZE 1024
 #define TEST_BURST_SIZE 64
 
 static struct rte_ring **
@@ -59,7 +58,7 @@ prepare_outgoing_rings(const char *name, uint16_t outgoing_ring_count,
 
     for (i = 0; i < outgoing_ring_count; i++) {
         snprintf(tmp_name, sizeof (tmp_name), "OTR_%s_%" PRIu16, name, i);
-        ret[i] = rte_ring_create(tmp_name, TEST_RING_SIZE, socket_id, RING_F_SC_DEQ);
+        ret[i] = rte_ring_create(tmp_name, GPS_I_FORWARDER_INCOMING_RING_SIZE, socket_id, RING_F_SC_DEQ);
         if (unlikely(ret[i] == NULL)) {
             DEBUG("fail to create outgoing_ring %" PRIu16 ", reason: %s",
                     i, rte_strerror(rte_errno));
@@ -98,139 +97,7 @@ destroy_outgoing_rings(struct rte_ring *outgoing_rings[],
     rte_free(outgoing_rings);
 }
 
-static struct gps_i_forwarder_control_lcore *
-prepare_control_lcore(const char *name,
-        struct gps_i_forwarder_control_plane *forwarder,
-        struct rte_ring *outgoing_rings[],
-        uint16_t outgoing_ring_count,
-        unsigned socket_id) {
-    char tmp_name[RTE_MEMZONE_NAMESIZE];
-    struct gps_i_forwarder_control_lcore *control_lcore;
-    uint32_t outgoing_ring_size = outgoing_ring_count * sizeof (struct rte_ring *);
-    uint32_t size = sizeof (struct gps_i_forwarder_control_lcore) +outgoing_ring_size;
-    DEBUG("outgoing_ring count=%" PRIu16 ", size=%" PRIu32 ", control_lcore_size=%" PRIu32,
-            outgoing_ring_count, outgoing_ring_size, size);
 
-    snprintf(tmp_name, sizeof (tmp_name), "CCORE_%s", name);
-    DEBUG("control_lcore name: %s", tmp_name);
-    control_lcore = rte_zmalloc_socket(tmp_name, size, 0, socket_id);
-    if (unlikely(control_lcore == NULL)) {
-        DEBUG("fail to create gps_i_forwarder_control_lcore, reason: %s",
-                rte_strerror(rte_errno));
-        goto fail;
-    }
-    DEBUG("control_lcore=%p, forwarder=%p, outgoing_rings=%p",
-            control_lcore, forwarder, outgoing_rings);
-
-    snprintf(tmp_name, sizeof (tmp_name), "CTR_%s", name);
-    DEBUG("incoming_ring name: %s", tmp_name);
-    control_lcore->incoming_ring = rte_ring_create(tmp_name,
-            TEST_RING_SIZE, socket_id, RING_F_SC_DEQ);
-    if (unlikely(control_lcore->incoming_ring == NULL)) {
-        DEBUG("fail to create incoming_ring, reason: %s",
-                rte_strerror(rte_errno));
-        goto fail;
-    }
-    DEBUG("incoming_ring=%p", control_lcore->incoming_ring);
-
-    control_lcore->forwarder = forwarder;
-    control_lcore->ip_id = (uint16_t) rte_rand();
-    memcpy(control_lcore->outgoing_rings, outgoing_rings, outgoing_ring_size);
-    return control_lcore;
-fail:
-    if (control_lcore != NULL) {
-        if (control_lcore->incoming_ring != NULL) {
-            DEBUG("free incoming_ring=%p", control_lcore->incoming_ring);
-            rte_ring_free(control_lcore->incoming_ring);
-        }
-        memset(control_lcore, 0, size);
-        DEBUG("free control_lcore=%p", control_lcore);
-        rte_free(control_lcore);
-    }
-    return NULL;
-}
-
-static void
-destroy_control_lcore(struct gps_i_forwarder_control_lcore *control_lcore,
-        uint16_t outgoing_ring_count) {
-    uint32_t outgoing_ring_size = outgoing_ring_count * sizeof (struct rte_ring *);
-    uint32_t size = sizeof (struct gps_i_forwarder_control_lcore) +outgoing_ring_size;
-
-    DEBUG("free control_lcore=%p, incoming_ring=%p",
-            control_lcore, control_lcore->incoming_ring);
-    rte_ring_free(control_lcore->incoming_ring);
-    memset(control_lcore, 0, size);
-    rte_free(control_lcore);
-}
-
-static struct gps_i_forwarder_process_lcore *
-prepare_process_lcore(const char *name,
-        struct gps_i_forwarder_data_plane *forwarder,
-        struct rte_ring *control_ring,
-        struct rte_ring *outgoing_rings[],
-        uint16_t outgoing_ring_count,
-        unsigned socket_id) {
-    char tmp_name[RTE_MEMZONE_NAMESIZE];
-    struct gps_i_forwarder_process_lcore *process_lcore;
-    uint32_t outgoing_ring_size = outgoing_ring_count * sizeof (struct rte_ring *);
-    uint32_t size = sizeof (struct gps_i_forwarder_process_lcore) +outgoing_ring_size;
-    DEBUG("outgoing_ring count=%" PRIu16 ", size=%" PRIu32 ", process_lcore_size=%" PRIu32,
-            outgoing_ring_count, outgoing_ring_size, size);
-
-    snprintf(tmp_name, sizeof (tmp_name), "PCORE_%s", name);
-    DEBUG("process_lcore name: %s", tmp_name);
-    process_lcore = rte_zmalloc(tmp_name, size, 0);
-    if (unlikely(process_lcore == NULL)) {
-        DEBUG("fail to create process_lcore, reason: %s",
-                rte_strerror(rte_errno));
-        goto fail;
-    }
-    DEBUG("process_lcore=%p, forwarder=%p, control_ring=%p, outgoing_rings=%p",
-            process_lcore, forwarder, control_ring, outgoing_rings);
-
-    snprintf(tmp_name, sizeof (tmp_name), "INR_%s", name);
-    DEBUG("incoming_ring name: %s", tmp_name);
-    process_lcore->incoming_ring = rte_ring_create(tmp_name,
-            TEST_RING_SIZE, socket_id, RING_F_SC_DEQ);
-    if (unlikely(process_lcore->incoming_ring == NULL)) {
-        DEBUG("fail to create incoming_ring, reason: %s",
-                rte_strerror(rte_errno));
-        goto fail;
-    }
-    DEBUG("incoming_ring=%p", process_lcore->incoming_ring);
-
-    process_lcore->forwarder = forwarder;
-    process_lcore->control_ring = control_ring;
-    process_lcore->ip_id = (uint16_t) rte_rand();
-    memcpy(process_lcore->outgoing_rings, outgoing_rings, outgoing_ring_size);
-    return process_lcore;
-
-fail:
-    if (process_lcore != NULL) {
-
-        if (process_lcore->incoming_ring != NULL) {
-            DEBUG("free incoming_ring=%p", process_lcore->incoming_ring);
-            rte_ring_free(process_lcore->incoming_ring);
-        }
-        memset(process_lcore, 0, size);
-        DEBUG("free process_lcore=%p", process_lcore);
-        rte_free(process_lcore);
-    }
-    return NULL;
-}
-
-static void
-destroy_process_lcore(struct gps_i_forwarder_process_lcore *process_lcore,
-        uint16_t outgoing_ring_count) {
-    uint32_t outgoing_ring_size = outgoing_ring_count * sizeof (struct rte_ring *);
-    uint32_t size = sizeof (struct gps_i_forwarder_process_lcore) +outgoing_ring_size;
-
-    DEBUG("free process_lcore=%p, incoming_ring=%p",
-            process_lcore, process_lcore->incoming_ring);
-    rte_ring_free(process_lcore->incoming_ring);
-    memset(process_lcore, 0, size);
-    rte_free(process_lcore);
-}
 
 
 volatile bool running = false;
@@ -260,15 +127,16 @@ test_forwarder_logic_receive(void *param) {
 
 static int
 test_forwarder_logic_control(void *param) {
-    struct gps_i_forwarder_control_lcore *controllcore = param;
+    struct gps_i_forwarder_control_lcore *control_lcore = param;
     struct rte_mbuf * pkts[TEST_BURST_SIZE];
     unsigned burst_size, j;
 
 
     DEBUG("Control start, param=%p", param);
     while (running) {
-        burst_size = rte_ring_dequeue_burst(controllcore->incoming_ring, (void **) pkts, TEST_BURST_SIZE, NULL);
+        burst_size = rte_ring_dequeue_burst(control_lcore->incoming_ring, (void **) pkts, TEST_BURST_SIZE, NULL);
         for (j = 0; j < burst_size; j++) {
+            control_lcore->received_count++;
             DEBUG("Got packet %p from incoming ring, data size=%" PRIu16 ", free", pkts[j], rte_pktmbuf_data_len(pkts[j]));
             print_buf(rte_pktmbuf_mtod(pkts[j], void *), rte_pktmbuf_data_len(pkts[j]), 16);
             rte_pktmbuf_free(pkts[j]);
@@ -349,11 +217,11 @@ test_logic_master(const char *name, test_forwarder_logic_generator_t *generator)
     outgoing_rings = prepare_outgoing_rings(name, TEST_OUTGOING_RING_SIZE, socket_id);
     if (unlikely(outgoing_rings == NULL)) FAIL("Cannot create rings");
 
-    control_lcore = prepare_control_lcore(name, forwarder_c,
+    control_lcore = gps_i_forwarder_control_lcore_create(name, forwarder_c,
             outgoing_rings, TEST_OUTGOING_RING_SIZE, socket_id);
     if (unlikely(control_lcore == NULL)) FAIL("Cannot create control_lcore");
 
-    process_lcore = prepare_process_lcore(name, forwarder_d,
+    process_lcore = gps_i_forwarder_process_lcore_create(name, forwarder_d,
             control_lcore->incoming_ring, outgoing_rings, TEST_OUTGOING_RING_SIZE,
             socket_id);
     if (unlikely(process_lcore == NULL)) FAIL("Cannot create process_lcore");
@@ -381,9 +249,14 @@ test_logic_master(const char *name, test_forwarder_logic_generator_t *generator)
     }
     DEBUG("Finish");
 
+    DEBUG("process lcore stat:");
+    gps_i_forwarder_process_lcore_print_stat(stdout, process_lcore, TEST_OUTGOING_RING_SIZE);
+    DEBUG("control lcore stat:");
+    gps_i_forwarder_control_lcore_print_stat(stdout, control_lcore, TEST_OUTGOING_RING_SIZE);
+
     printf("\n");
-    destroy_process_lcore(process_lcore, TEST_OUTGOING_RING_SIZE);
-    destroy_control_lcore(control_lcore, TEST_OUTGOING_RING_SIZE);
+    gps_i_forwarder_process_lcore_destroy(process_lcore, TEST_OUTGOING_RING_SIZE);
+    gps_i_forwarder_control_lcore_destroy(control_lcore, TEST_OUTGOING_RING_SIZE);
     destroy_outgoing_rings(outgoing_rings, TEST_OUTGOING_RING_SIZE);
     gps_i_forwarder_control_plane_destroy(forwarder_c);
 

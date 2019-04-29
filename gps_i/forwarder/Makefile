@@ -6,7 +6,7 @@ ifeq ($(TEST),)
     # binary name
     APP = gps_i_forwarder
     # all source are stored in SRCS-y
-    SRCS-y := main.c 
+    SRCS-y := main.c link_helper.c
 else
     APP = test_gps_i_forwarder
     SRCS-y := test.c test_gps_i_neighbor_table.c test_gps_i_routing_table.c test_gps_i_gnrs_cache.c test_gps_i_forwarder_logic.c

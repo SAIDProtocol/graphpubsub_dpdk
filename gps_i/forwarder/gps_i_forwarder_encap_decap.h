@@ -6,10 +6,7 @@
 #ifndef GPS_I_FORWARDER_ENCAP_DECAP_H
 #define GPS_I_FORWARDER_ENCAP_DECAP_H
 
-#include "gps_i_anno.h"
 #include "gps_i_forwarder_common.h"
-#include <gps_headers.h>
-#include <rte_branch_prediction.h>
 #include <rte_ether.h>
 #include <rte_ip.h>
 
@@ -104,7 +101,62 @@ success:
     static __rte_always_inline void
     gps_i_forwarder_encapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt) {
         RTE_SET_USED(lcore);
-        RTE_SET_USED(pkt);
+        struct gps_i_anno *anno;
+        const struct gps_i_neighbor_info *neighbor_info, *local_info;
+        struct ether_hdr *eth_hdr;
+        struct ipv4_hdr *ip_hdr;
+#ifdef GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
+        char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+#endif
+        anno = rte_mbuf_to_priv(pkt);
+        DEBUG("encapsulate, next_hop_na=%s", gps_na_format(na_buf, sizeof (na_buf), &anno->next_hop_na));
+
+        neighbor_info = gps_i_neighbor_table_lookup(lcore->forwarder->neighbor_table, &anno->next_hop_na);
+        DEBUG("lookup neighbor table neighbor_info=%s [%p]",
+                neighbor_info == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), neighbor_info),
+                neighbor_info);
+        if (unlikely(neighbor_info == NULL)) {
+            DEBUG("Cannot find next hop, discard pkt: %p", pkt);
+            rte_pktmbuf_free(pkt);
+            return;
+        }
+
+        DEBUG("pkt_start=%p", rte_pktmbuf_mtod(pkt, void *));
+        local_info = &lcore->forwarder->my_encap_info[neighbor_info->port];
+        if (unlikely(neighbor_info->use_ip)) {
+            eth_hdr = (struct ether_hdr *) (rte_pktmbuf_prepend(pkt, sizeof (struct ether_hdr) + sizeof (struct ipv4_hdr)));
+            ip_hdr = (struct ipv4_hdr *) (eth_hdr + 1);
+            DEBUG("pkt_start=%p, eth_hdr=%p, ip_hdr=%p", rte_pktmbuf_mtod(pkt, void *), eth_hdr, ip_hdr);
+            if (unlikely(eth_hdr == NULL)) {
+                DEBUG("Cannot prepend ether header, free pkt=%p", pkt);
+                rte_pktmbuf_free(pkt);
+                return;
+            }
+            eth_hdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
+            // populate ip_hdr
+            ip_hdr->version_ihl = 0x40 | (sizeof (struct ipv4_hdr) >> 2);
+            ip_hdr->type_of_service = 0x10;
+            ip_hdr->total_length = rte_cpu_to_be_16(rte_pktmbuf_data_len(pkt) - sizeof (struct ether_hdr));
+            ip_hdr->packet_id = rte_cpu_to_be_16(++lcore->ip_id);
+            ip_hdr->fragment_offset = rte_cpu_to_be_16(0x4000); // don't fragment
+            ip_hdr->time_to_live = 64;
+            ip_hdr->next_proto_id = GPS_PROTO_TYPE_IP;
+            ip_hdr->src_addr = local_info->ip;
+            ip_hdr->dst_addr = neighbor_info->ip;
+            ip_hdr->hdr_checksum = rte_ipv4_phdr_cksum(ip_hdr, pkt->ol_flags);
+        } else {
+            eth_hdr = (struct ether_hdr *) (rte_pktmbuf_prepend(pkt, sizeof (struct ether_hdr)));
+            DEBUG("pkt_start=%p, eth_hdr=%p", rte_pktmbuf_mtod(pkt, void *), eth_hdr);
+            if (unlikely(eth_hdr == NULL)) {
+                DEBUG("Cannot prepend ether header, free pkt=%p", pkt);
+                rte_pktmbuf_free(pkt);
+                return;
+            }
+            eth_hdr->ether_type = rte_cpu_to_be_16(GPS_PROTO_TYPE_ETHER);
+        }
+        ether_addr_copy(&local_info->ether, &eth_hdr->s_addr);
+        ether_addr_copy(&neighbor_info->ether, &eth_hdr->d_addr);
+        rte_ring_enqueue(lcore->outgoing_rings[neighbor_info->port], pkt);
     }
 
 

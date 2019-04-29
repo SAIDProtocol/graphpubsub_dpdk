@@ -158,7 +158,7 @@ test_neighbor_table_basic_2(void) {
         .ether =
         {.addr_bytes =
             { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}},
-        .ip = IPv4(192, 168, 123, 234),
+        .ip = rte_cpu_to_be_32(IPv4(192, 168, 123, 234)),
         .port = 54321,
         .use_ip = true
     };
@@ -201,7 +201,7 @@ test_neighbor_table_basic_2(void) {
     gps_i_neighbor_table_cleanup(table);
     printf("\n");
 
-    info.ip = IPv4(192, 168, 1, 2);
+    info.ip = rte_cpu_to_be_32(IPv4(192, 168, 1, 2));
     info.port = 1234;
     rte_memcpy(&info.ether, &addr2, sizeof (struct ether_addr));
 

@@ -53,7 +53,7 @@ extern "C" {
         // subscription table
         // rp
         struct gps_na my_na;
-        struct gps_i_neighbor_info my_encap_info;
+        struct gps_i_neighbor_info *my_encap_info; // one info for each outgoing port
         struct rte_mempool *pkt_pool;
         // values that will not appear in const forwarder
         // gnrs pending table: will always change value, therefore, will not be in const forwarder
@@ -67,7 +67,7 @@ extern "C" {
         // subscription table
         // rp
         const struct gps_na my_na;
-        const struct gps_i_neighbor_info my_encap_info;
+        const struct gps_i_neighbor_info *my_encap_info;
         struct rte_mempool *pkt_pool;
     };
 
@@ -78,7 +78,7 @@ extern "C" {
         char tmp_name[RTE_MEMZONE_NAMESIZE];
         struct gps_i_forwarder_control_plane *forwarder;
 #ifdef  GPS_I_FORWARDER_COMMON_DEBUG
-        char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+        char na_buf[GPS_NA_FMT_SIZE];
 #endif
 
         snprintf(tmp_name, sizeof (tmp_name), "FWD_%s", name);
@@ -140,9 +140,8 @@ extern "C" {
 
         gps_na_copy(&forwarder->my_na, na);
         DEBUG("na=%s", gps_na_format(na_buf, sizeof (na_buf), &forwarder->my_na));
-        rte_memcpy(&forwarder->my_encap_info, encap_info, sizeof (struct gps_i_neighbor_info));
-        DEBUG("encap=%s",
-                gps_i_neighbor_info_format(info_buf, sizeof (info_buf), &forwarder->my_encap_info));
+        forwarder->my_encap_info = encap_info;
+        DEBUG("encap=%p", forwarder->my_encap_info);
 
         return forwarder;
 fail:
@@ -222,12 +221,14 @@ fail:
         struct gps_i_forwarder_data_plane * forwarder; // should only use lookup functions in the structure
         struct rte_ring *incoming_ring;
         struct rte_ring *control_ring;
+        uint16_t ip_id;
         struct rte_ring *outgoing_rings[];
     };
 
     struct gps_i_forwarder_control_lcore {
         struct gps_i_forwarder_control_plane *forwarder;
         struct rte_ring *incoming_ring;
+        uint16_t ip_id;
         struct rte_ring *outgoing_rings[];
     };
 
@@ -235,9 +236,22 @@ fail:
     gps_i_forwarder_decapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt);
 
     static __rte_always_inline void
+    gps_i_forwarder_encapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt);
+
+    static __rte_always_inline void
+    gps_i_forwarder_handle_publication(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt);
+
+    static __rte_always_inline void 
+    gps_i_forwarder_handle_packet(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt) {
+        // start everything from decapsulation, then, decapsulate will call the other functions
+        gps_i_forwarder_decapsulate(lcore, pkt);
+    }
+    
+    static __rte_always_inline void
     gps_i_forwarder_handle_gps_packet(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt) {
         RTE_SET_USED(lcore);
         uint16_t data_len;
+        uint8_t pkt_type;
 
         data_len = rte_pktmbuf_data_len(pkt);
         if (unlikely(data_len < sizeof (struct gps_pkt_common))) {
@@ -247,27 +261,52 @@ fail:
             rte_pktmbuf_free(pkt);
             return;
         }
-        DEBUG("free pkt: %p", pkt);
-        rte_pktmbuf_free(pkt);
+        pkt_type = gps_pkt_get_type(rte_pktmbuf_mtod(pkt, void *));
+        switch (pkt_type) {
+            case GPS_PKT_TYPE_LSA:
+                DEBUG("LSA, free pkt: %p", pkt);
+                // has to be a control packet
+                rte_ring_enqueue(lcore->control_ring, pkt);
+                break;
+            case GPS_PKT_TYPE_PUBLICATION:
+                gps_i_forwarder_handle_publication(lcore, pkt);
+                break;
+            case GPS_PKT_TYPE_SUBSCRIPTION:
+                // has to be a control packet
+                rte_ring_enqueue(lcore->control_ring, pkt);
+                break;
+            case GPS_PKT_TYPE_GNRS_REQ:
+                DEBUG("GNRS request, free pkt: %p", pkt);
+                rte_pktmbuf_free(pkt);
+                break;
+            case GPS_PKT_TYPE_GNRS_RESP:
+                // has to be a control packet
+                rte_ring_enqueue(lcore->control_ring, pkt);
+                break;
+            case GPS_PKT_TYPE_GNRS_ASSO:
+                DEBUG("GNRS assocation, free pkt: %p", pkt);
+                rte_pktmbuf_free(pkt);
+                break;
+            default:
+                DEBUG("Unknown packet type 0x%02" PRIX8 ", free pkt: %p", pkt_type, pkt);
+                rte_pktmbuf_free(pkt);
+                break;
+        }
     }
 
-    //    static __rte_always_inline void
-    //    gps_i_forwarder_handle_publication(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt);
-    //
-    //    static __rte_always_inline void
-    //    gps_i_forwarder_control_handle_publication(struct gps_i_forwarder_control_lcore, struct rte_mbuf *pkt);
-    //
-    //    static __rte_always_inline void
-    //    gps_i_forwarder_control_handle_subscription(struct gps_i_forwarder_control_lcore, struct rte_mbuf *pkt);
-    //
-    //    static __rte_always_inline void
-    //    gps_i_forwarder_control_handle_gnrs_request(struct gps_i_forwarder_control_lcore, struct rte_mbuf *pkt);
-    //
-    //    static __rte_always_inline void
-    //    gps_i_forwarder_control_handle_gnrs_response(struct gps_i_forwarder_control_lcore, struct rte_mbuf *pkt);
-
     static __rte_always_inline void
-    gps_i_forwarder_encapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt);
+    gps_i_forwarder_control_handle_publication(struct gps_i_forwarder_control_lcore *lcore, struct rte_mbuf *pkt);
+
+    //    static __rte_always_inline void
+    //    gps_i_forwarder_control_handle_subscription(struct gps_i_forwarder_control_lcore *lcore, struct rte_mbuf *pkt);
+    //
+    //    static __rte_always_inline void
+    //    gps_i_forwarder_control_handle_gnrs_request(struct gps_i_forwarder_control_lcore *lcore, struct rte_mbuf *pkt);
+    //
+    //    static __rte_always_inline void
+    //    gps_i_forwarder_control_handle_gnrs_response(struct gps_i_forwarder_control_lcore *lcore, struct rte_mbuf *pkt);
+
+
 
 #undef _DEBUG
 #undef DEBUG

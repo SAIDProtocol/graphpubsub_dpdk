@@ -267,7 +267,6 @@ gps_i_neighbor_table_print(struct gps_i_neighbor_table *table,
                 position,
                 data == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), data),
                 data);
-        fprintf(stream, "\n");
     }
     fprintf(stream, ">>>>>>>>>>\n");
 

@@ -38,20 +38,23 @@ extern "C" {
         uint8_t content[GPS_GUID_SIZE];
     } __rte_packed;
 
-    static __rte_always_inline void
+    static __rte_always_inline struct gps_guid *
     gps_guid_copy(struct gps_guid *dst, const struct gps_guid *src) {
         rte_memcpy(dst, src, GPS_GUID_SIZE);
+        return dst;
     }
 
-    static __rte_always_inline void
+    static __rte_always_inline struct gps_guid *
     gps_guid_clear(struct gps_guid *dst) {
         memset(dst, 0, GPS_GUID_SIZE);
+        return dst;
     }
 
-    static __rte_always_inline void
+    static __rte_always_inline struct gps_guid *
     gps_guid_set(struct gps_guid *dst, const uint32_t src) {
         gps_guid_clear(dst);
         *((uint32_t *) (dst->content + GPS_GUID_SIZE - sizeof (uint32_t))) = rte_cpu_to_be_32(src);
+        return dst;
     }
 
     static __rte_always_inline int

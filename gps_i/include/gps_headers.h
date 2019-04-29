@@ -248,7 +248,7 @@ extern "C" {
         return gps_pkt_application_get_src_na(pkt);
     }
 
-    static __rte_always_inline const struct gps_na *
+    static __rte_always_inline struct gps_na *
     gps_pkt_publication_get_dst_na(void *pkt) {
         return gps_pkt_application_get_dst_na(pkt);
     }

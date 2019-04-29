@@ -35,7 +35,7 @@ extern "C" {
         const uint8_t *tmp_ip = (const uint8_t *) &info->ip;
         if (info->use_ip) {
             snprintf(buf, size, "Neighbor{ether=%s,ip=%" PRIu8 ".%" PRIu8 ".%" PRIu8 ".%" PRIu8 ",port=%" PRIu16 "}",
-                    ether_buf, tmp_ip[3], tmp_ip[2], tmp_ip[1], tmp_ip[0], info->port);
+                    ether_buf, tmp_ip[0], tmp_ip[1], tmp_ip[2], tmp_ip[3], info->port);
         } else {
             snprintf(buf, size, "Neighbor{ether=%s,port=%" PRIu16 "}",
                     ether_buf, info->port);

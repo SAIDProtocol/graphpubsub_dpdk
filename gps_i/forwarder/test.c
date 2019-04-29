@@ -49,7 +49,7 @@ void
 print_buf(const void *buf, uint32_t size, uint32_t wrap) {
     uint32_t i, j;
     for (i = 0; i < size;) {
-        printf("%04X:", i);
+        printf("  %04X:", i);
         for (j = 0; i < size && j < wrap; i++, j++) {
             printf(" %02X", ((const uint8_t *) buf)[i]);
         }

@@ -13,6 +13,7 @@
 #include <urcu/urcu-qsbr.h>
 #include "gps_i_forwarder_common.h"
 #include "gps_i_forwarder_encap_decap.h"
+#include "gps_i_forwarder_publication.h"
 
 #define RTE_LOGTYPE_TEST_FORWARDER_LOGIC RTE_LOGTYPE_USER1
 
@@ -31,7 +32,9 @@ void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 void dump_mem(const char *file_name);
 void test_forwarder_logic(void);
 
-typedef void (test_forwarder_logic_generator_t) (struct rte_mempool *, struct rte_ring *);
+typedef void (test_forwarder_logic_generator_t) (struct rte_mempool *, struct rte_ring *, struct gps_i_forwarder_control_plane *);
+void generator_decapsulation(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder);
+void generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder);
 
 #define TEST_OUTGOING_RING_SIZE 3
 #define TEST_RING_SIZE 1024
@@ -131,6 +134,7 @@ prepare_control_lcore(const char *name,
     DEBUG("incoming_ring=%p", control_lcore->incoming_ring);
 
     control_lcore->forwarder = forwarder;
+    control_lcore->ip_id = (uint16_t) rte_rand();
     memcpy(control_lcore->outgoing_rings, outgoing_rings, outgoing_ring_size);
     return control_lcore;
 fail:
@@ -197,6 +201,7 @@ prepare_process_lcore(const char *name,
 
     process_lcore->forwarder = forwarder;
     process_lcore->control_ring = control_ring;
+    process_lcore->ip_id = (uint16_t) rte_rand();
     memcpy(process_lcore->outgoing_rings, outgoing_rings, outgoing_ring_size);
     return process_lcore;
 
@@ -243,7 +248,8 @@ test_forwarder_logic_receive(void *param) {
         for (i = 0; i < TEST_OUTGOING_RING_SIZE; i++) {
             burst_size = rte_ring_dequeue_burst(rings[i], (void **) pkts, TEST_BURST_SIZE, NULL);
             for (j = 0; j < burst_size; j++) {
-                DEBUG("Got packet from output ring %" PRIu16 ", data size=%" PRIu16, i, rte_pktmbuf_data_len(pkts[j]));
+                DEBUG("Got packet %p from output ring %" PRIu16 ", data size=%" PRIu16 ", free", pkts[j], i, rte_pktmbuf_data_len(pkts[j]));
+                print_buf(rte_pktmbuf_mtod(pkts[j], void *), rte_pktmbuf_data_len(pkts[j]), 16);
                 rte_pktmbuf_free(pkts[j]);
             }
         }
@@ -263,8 +269,10 @@ test_forwarder_logic_control(void *param) {
     while (running) {
         burst_size = rte_ring_dequeue_burst(controllcore->incoming_ring, (void **) pkts, TEST_BURST_SIZE, NULL);
         for (j = 0; j < burst_size; j++) {
-            DEBUG("Got packet from incoming ring, data size=%" PRIu16, rte_pktmbuf_data_len(pkts[j]));
+            DEBUG("Got packet %p from incoming ring, data size=%" PRIu16 ", free", pkts[j], rte_pktmbuf_data_len(pkts[j]));
+            print_buf(rte_pktmbuf_mtod(pkts[j], void *), rte_pktmbuf_data_len(pkts[j]), 16);
             rte_pktmbuf_free(pkts[j]);
+            printf("\n");
         }
         urcu_qsbr_synchronize_rcu();
     }
@@ -278,17 +286,21 @@ test_forwarder_logic_process(void *param) {
     struct rte_mbuf * pkts[TEST_BURST_SIZE];
     unsigned burst_size, j;
 
+    urcu_qsbr_register_thread();
+
     DEBUG("Process start, param=%p", param);
     while (running) {
         burst_size = rte_ring_dequeue_burst(process_lcore->incoming_ring, (void **) pkts, TEST_BURST_SIZE, NULL);
         for (j = 0; j < burst_size; j++) {
             DEBUG("Got packet from incoming ring, data size=%" PRIu16, rte_pktmbuf_data_len(pkts[j]));
-            gps_i_forwarder_decapsulate(process_lcore, pkts[j]);
+            gps_i_forwarder_handle_packet(process_lcore, pkts[j]);
             printf("\n");
         }
         urcu_qsbr_quiescent_state();
     }
     DEBUG("Process end");
+    urcu_qsbr_unregister_thread();
+
     return 0;
 }
 
@@ -301,13 +313,11 @@ test_logic_master(const char *name, test_forwarder_logic_generator_t *generator)
     struct gps_i_forwarder_control_lcore *control_lcore;
     struct gps_na na;
     struct rte_ring **outgoing_rings = NULL;
-    struct gps_i_neighbor_info encap = {
-        .port = 0,
-        .use_ip = true,
-        .ip = IPv4(192, 168, 123, 231)
-    };
+    struct gps_i_neighbor_info encap[TEST_OUTGOING_RING_SIZE];
+    char info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
     unsigned lcore = -1;
     unsigned socket_id;
+    uint16_t i;
 
     if (rte_lcore_count() < 4) {
         FAIL("Need at least 4 cores!");
@@ -316,12 +326,21 @@ test_logic_master(const char *name, test_forwarder_logic_generator_t *generator)
 
     gps_na_set(&na, 0x101);
     // set encap
-    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c6", &encap.ether, sizeof (encap.ether));
+    for (i = 0; i < TEST_OUTGOING_RING_SIZE; i++) {
+        encap[i].port = i;
+        encap[i].use_ip = true;
+        encap[i].ip = rte_cpu_to_be_32(IPv4(192, 168 + i, 1, 100 + i));
+        cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c6", &encap[i].ether, sizeof (encap[i].ether));
+        encap[i].ether.addr_bytes[5] += i;
+        DEBUG("encap[%" PRIu16 "]=%s [%p]", i,
+                gps_i_neighbor_info_format(info_buf, sizeof (info_buf), encap + i),
+                encap + i);
+    }
 
 
 
     socket_id = rte_socket_id();
-    forwarder_c = gps_i_forwarder_control_plane_create(name, socket_id, &na, &encap);
+    forwarder_c = gps_i_forwarder_control_plane_create(name, socket_id, &na, encap);
     if (forwarder_c == NULL) FAIL("Cannot create forwarder_c");
     DEBUG("forwarder_c=%p", forwarder_c);
     forwarder_d = gps_i_forwarder_control_plane_to_data_plane(forwarder_c);
@@ -352,7 +371,7 @@ test_logic_master(const char *name, test_forwarder_logic_generator_t *generator)
 
     rte_delay_ms(100);
 
-    generator(forwarder_c->pkt_pool, process_lcore->incoming_ring);
+    generator(forwarder_c->pkt_pool, process_lcore->incoming_ring, forwarder_c);
     //
     rte_delay_ms(100);
     running = false;
@@ -370,7 +389,8 @@ test_logic_master(const char *name, test_forwarder_logic_generator_t *generator)
 
 }
 
-static void generator_decapsulation(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring) {
+void
+generator_decapsulation(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder __rte_unused) {
     struct rte_mbuf *pkt;
     struct ether_hdr *eth_hdr;
     struct ipv4_hdr *ip_hdr;
@@ -503,9 +523,283 @@ static void generator_decapsulation(struct rte_mempool *pkt_pool, struct rte_rin
     rte_ring_enqueue(processor_ring, pkt);
 }
 
+static inline struct rte_mbuf *
+create_correct_ether_pkt(struct rte_mempool *pkt_pool) {
+    struct rte_mbuf *pkt;
+    struct ether_hdr *eth_hdr;
+
+    pkt = rte_pktmbuf_alloc(pkt_pool);
+    DEBUG("got pkt: %p", pkt);
+    if (unlikely(pkt == NULL)) FAIL("Cannot get packet from pool, reason: %s", rte_strerror(rte_errno));
+    DEBUG("pkt_start=%p", rte_pktmbuf_mtod(pkt, void *));
+    eth_hdr = (struct ether_hdr*) rte_pktmbuf_append(pkt, sizeof (struct ether_hdr));
+    DEBUG("eth_hdr=%p, pkt_start=%p", eth_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(eth_hdr == NULL)) FAIL("Cannot get eth_hdr, reason: %s", rte_strerror(rte_errno));
+    eth_hdr->ether_type = rte_cpu_to_be_16(GPS_PROTO_TYPE_ETHER);
+
+    return pkt;
+}
+
+void
+generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder) {
+    struct rte_mbuf *pkt;
+    char *gps_hdr;
+    struct gps_na na, next_hop_na;
+    struct gps_guid guid;
+    struct gps_i_neighbor_info *info, *ret_info;
+    int32_t ret;
+    uint32_t distance;
+
+    char na_buf[GPS_NA_FMT_SIZE], next_hop_na_buf[GPS_NA_FMT_SIZE], guid_buf[GPS_GUID_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+
+    ret = gps_i_gnrs_cache_set(forwarder->gnrs_cache,
+            gps_guid_set(&guid, 0x12345678),
+            gps_na_copy(&na, &forwarder->my_na), 1);
+    DEBUG("gnrs cache set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set gnrs cache");
+    ret = gps_i_gnrs_cache_set(forwarder->gnrs_cache,
+            gps_guid_set(&guid, 0x22345678),
+            gps_na_set(&na, 0x87654321), 1);
+    DEBUG("gnrs cache set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set gnrs cache");
+    ret = gps_i_gnrs_cache_set(forwarder->gnrs_cache,
+            gps_guid_set(&guid, 0x32345678),
+            gps_na_set(&na, 0x11234), 1);
+    DEBUG("gnrs cache set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set gnrs cache");
+    ret = gps_i_gnrs_cache_set(forwarder->gnrs_cache,
+            gps_guid_set(&guid, 0x42345678),
+            gps_na_set(&na, 0x13456), 1);
+    DEBUG("gnrs cache set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set gnrs cache");
+    ret = gps_i_gnrs_cache_set(forwarder->gnrs_cache,
+            gps_guid_set(&guid, 0x52345678),
+            gps_na_set(&na, 0x14567), 1);
+    DEBUG("gnrs cache set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set gnrs cache");
+    gps_i_gnrs_cache_print(forwarder->gnrs_cache, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] gnrs cache", __func__, __LINE__);
+
+
+    ret = gps_i_routing_table_set(forwarder->routing_table,
+            gps_na_set(&na, 0x11234),
+            gps_na_set(&next_hop_na, 0x21234), distance = 1);
+    DEBUG("routing table set %s -> %s (%" PRIu32 "), ret=%" PRIi32, gps_na_format(na_buf, sizeof (na_buf), &na), gps_na_format(next_hop_na_buf, sizeof (next_hop_na_buf), &next_hop_na), distance, ret);
+    if (ret < 0) FAIL("Cannot set routing table");
+    ret = gps_i_routing_table_set(forwarder->routing_table,
+            gps_na_set(&na, 0x13456),
+            gps_na_set(&next_hop_na, 0x23456), distance = 1);
+    DEBUG("routing table set %s -> %s (%" PRIu32 "), ret=%" PRIi32, gps_na_format(na_buf, sizeof (na_buf), &na), gps_na_format(next_hop_na_buf, sizeof (next_hop_na_buf), &next_hop_na), distance, ret);
+    if (ret < 0) FAIL("Cannot set routing table");
+    ret = gps_i_routing_table_set(forwarder->routing_table,
+            gps_na_set(&na, 0x14567),
+            gps_na_set(&next_hop_na, 0x24567), distance = 1);
+    DEBUG("routing table set %s -> %s (%" PRIu32 "), ret=%" PRIi32, gps_na_format(na_buf, sizeof (na_buf), &na), gps_na_format(next_hop_na_buf, sizeof (next_hop_na_buf), &next_hop_na), distance, ret);
+    if (ret < 0) FAIL("Cannot set routing table");
+    gps_i_routing_table_print(forwarder->routing_table, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] routing table", __func__, __LINE__);
+
+
+    info = gps_i_neighbor_table_get_entry(forwarder->neighbor_table);
+    DEBUG("neighbor table get entry=%p", info);
+    if (info == NULL) FAIL("Cannot get entry from neighbor table");
+    cmdline_parse_etheraddr(NULL, "aa:bb:cc:dd:ee:ff", &info->ether, sizeof (info->ether));
+    info->use_ip = false;
+    info->port = 1;
+    ret_info = gps_i_neighbor_table_set(forwarder->neighbor_table, gps_na_set(&na, 0x23456), info);
+    DEBUG("neighbor table set %s -> %s, ret=%p", gps_na_format(na_buf, sizeof (na_buf), &na), gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info), ret_info);
+    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", info);
+
+    info = gps_i_neighbor_table_get_entry(forwarder->neighbor_table);
+    DEBUG("neighbor table get entry=%p", info);
+    if (info == NULL) FAIL("Cannot get entry from neighbor table");
+    cmdline_parse_etheraddr(NULL, "99:88:77:66:55:44", &info->ether, sizeof (info->ether));
+    info->use_ip = true;
+    info->ip = rte_cpu_to_be_32(IPv4(192, 123, 234, 12));
+    info->port = 2;
+    ret_info = gps_i_neighbor_table_set(forwarder->neighbor_table, gps_na_set(&na, 0x24567), info);
+    DEBUG("neighbor table set %s -> %s, ret=%p", gps_na_format(na_buf, sizeof (na_buf), &na), gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info), ret_info);
+    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", info);
+    gps_i_neighbor_table_print(forwarder->neighbor_table, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] routing table", __func__, __LINE__);
+
+    printf("\n");
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> error packet type");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, 4);
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, 0xd0);
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> too small publication");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, 4);
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication size not match");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 20);
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream first hop, cannot find guid");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x87654321); // cannot find guid
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream first hop, can find guid, but cannot find nexthop na");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x22345678); // can find guid, but cannot find nexthop na
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream first hop, can find guid, can find nexthop na, not self, next_hop_na not in neighbor table");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x32345678); // can find guid, can find nexthop na, not self, next_hop_na not in neighbor table
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream first hop, can find guid, can find nexthop na, not self, next_hop_na uses ether");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x42345678); // can find guid, can find nexthop na, not self, next_hop_na uses ether
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream first hop, can find guid, can find nexthop na, not self, next_hop_na uses ip");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x52345678); // can find guid, can find nexthop na, not self, next_hop_na uses ip
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x52345678); // can find guid, can find nexthop na, not self, next_hop_na uses ip
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream not first hop, cannot find next hop na");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0x87654321); // not first hop, cannot find next hop na
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+    //
+    DEBUG(">>>> publication upstream not first hop, can find next hop na");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0); // upstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0x13456); // not first hop, cannot find next hop na
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication upstream first hop, can find guid, can find nexthop na, self, rp does not serve");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(&na, 0);
+    gps_pkt_publication_set_src_na(gps_hdr, &na); // upstream
+    gps_pkt_publication_set_dst_na(gps_hdr, &na); // first hop
+    gps_guid_set(&guid, 0x12345678);
+    gps_pkt_publication_set_dst_guid(gps_hdr, &guid); // cannot find guid
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    DEBUG(">>>> publication upstream first hop, can find guid, can find nexthop na, self, rp serves");
+
+    rte_delay_ms(20);
+}
+
 void
 test_forwarder_logic(void) {
     dump_mem("dmp_test_forwarder_logic_0.txt");
-    test_logic_master("decap", generator_decapsulation);
-    dump_mem("dmp_test_forwarder_logic_1.txt");
+    //    test_logic_master("decap", generator_decapsulation);
+    //    dump_mem("dmp_test_forwarder_logic_1.txt");
+    test_logic_master("decap", generator_publication_upstream);
+    dump_mem("dmp_test_forwarder_logic_2.txt");
 }

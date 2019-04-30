@@ -213,9 +213,6 @@ fail:
         // rp
 
         // gnrs_pending_table doesn't need RCU, no cleanup needed.
-
-        memset(forwarder, 0, sizeof (struct gps_i_forwarder_control_plane));
-        rte_free(forwarder);
     }
 
     struct gps_i_forwarder_ring_with_stat {

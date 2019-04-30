@@ -4,6 +4,7 @@
  */
 
 
+#include <cmdline_parse_etheraddr.h>
 #include <inttypes.h>
 #include <rte_branch_prediction.h>
 #include <rte_common.h>
@@ -15,6 +16,7 @@
 #include <rte_lcore.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <urcu-qsbr.h>
 #include "link_helper.h"
 #include "gps_i_forwarder_common.h"
 #include "gps_i_forwarder_encap_decap.h"
@@ -33,11 +35,14 @@
 #define DEBUG_HEAD() \
     printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__)
 
+#define DEFAULT_BURST_SIZE 64
+#define PREFETCH_OFFSET 3
+#define BURST_TX_DRAIN_US 100
+
 struct receiver_params {
     uint16_t port_id;
     struct rte_ring *to_processor;
     uint64_t received_count;
-    uint64_t discarded_count;
     uint64_t sent_count;
 };
 
@@ -45,7 +50,6 @@ struct sender_params {
     uint16_t port_id;
     struct rte_ring *from_processor;
     uint64_t received_count;
-    uint64_t discarded_count;
     uint64_t sent_count;
 };
 
@@ -68,12 +72,38 @@ dump_mem(const char *file_name) {
     fflush(fp);
     fclose(fp);
 }
+
+static void
+print_buf(const void *buf, uint32_t size, uint32_t wrap) {
+    uint32_t i, j;
+    for (i = 0; i < size;) {
+        printf("  %04X:", i);
+        for (j = 0; i < size && j < wrap; i++, j++) {
+            printf(" %02X", ((const uint8_t *) buf)[i]);
+        }
+        printf("\n");
+    }
+}
+
 static int
 main_loop_receiver(void *params) {
     struct receiver_params *lcore = (struct receiver_params *) params;
+    struct rte_mbuf * pkts_burst[DEFAULT_BURST_SIZE];
+    uint16_t nb_rcv, nb_sent;
+
+
     DEBUG("lcore=%u, receive port=%" PRIu16, rte_lcore_id(), lcore->port_id);
-    while(running) {
-        
+    DEBUG("to_process=%p", lcore->to_processor);
+    while (running) {
+        nb_rcv = rte_eth_rx_burst(lcore->port_id, 0, pkts_burst, DEFAULT_BURST_SIZE);
+        lcore->received_count += nb_rcv;
+
+        nb_sent = rte_ring_enqueue_burst(lcore->to_processor, (void **) pkts_burst, nb_rcv, NULL);
+        lcore->sent_count += nb_sent;
+
+        while (unlikely(nb_sent < nb_rcv)) {
+            rte_pktmbuf_free(pkts_burst[nb_sent++]);
+        }
     }
     DEBUG("Receiver on lcore %u, port %" PRIu16 " exit!", rte_lcore_id(), lcore->port_id);
 }
@@ -81,9 +111,35 @@ main_loop_receiver(void *params) {
 static int
 main_loop_sender(void *params) {
     struct sender_params *lcore = (struct sender_params *) params;
+    struct rte_mbuf * pkts_burst[DEFAULT_BURST_SIZE];
+    uint16_t nb_rcv, nb_sent;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * BURST_TX_DRAIN_US;
+    uint64_t last_send_time = 0, cur_tsc;
+
+
     DEBUG("lcore=%u, send port=%" PRIu16, rte_lcore_id(), lcore->port_id);
-    while(running) {
-        
+    while (running) {
+        nb_rcv = rte_ring_dequeue_bulk(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
+        cur_tsc = rte_rdtsc();
+
+        // not a buffer yet
+        if (unlikely(!nb_rcv)) {
+            // not till drain yet
+            if (likely(cur_tsc < last_send_time + drain_tsc)) continue;
+            nb_rcv = rte_ring_dequeue_burst(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
+            // no data to send
+            if (unlikely(!nb_rcv)) {
+                last_send_time = cur_tsc;
+                continue;
+            }
+        }
+        lcore->received_count += nb_rcv;
+        nb_sent = rte_eth_tx_burst(0, 0, pkts_burst, nb_rcv);
+        last_send_time = cur_tsc;
+        lcore->sent_count += nb_sent;
+        while (unlikely(nb_sent < nb_rcv)) {
+            rte_pktmbuf_free(pkts_burst[nb_sent++]);
+        }
     }
     DEBUG("Sender on lcore %u, port %" PRIu16 " exit!", rte_lcore_id(), lcore->port_id);
 }
@@ -91,10 +147,28 @@ main_loop_sender(void *params) {
 static int
 main_loop_processor(void *params) {
     struct gps_i_forwarder_process_lcore *lcore = (struct gps_i_forwarder_process_lcore *) params;
-    DEBUG("lcore=%u, process", rte_lcore_id());
-    RTE_SET_USED(lcore);
-    while(running) {
-        
+    struct rte_mbuf * pkts_burst[DEFAULT_BURST_SIZE];
+    unsigned burst_size;
+    int j;
+
+    DEBUG("lcore=%u, process, ring:%p", rte_lcore_id(), lcore->incoming_ring);
+    while (running) {
+        burst_size = rte_ring_dequeue_burst(lcore->incoming_ring, (void **) pkts_burst, DEFAULT_BURST_SIZE, NULL);
+        lcore->received_count += burst_size;
+        //        DEBUG("burst_size=%" PRIu16, burst_size);
+
+        for (j = 0; j < PREFETCH_OFFSET && j < (int) burst_size; j++) {
+            //            DEBUG("prefetch=%" PRIu16, j);
+            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
+        }
+        for (j = 0; j < (int) (burst_size - PREFETCH_OFFSET); j++) {
+            //            DEBUG("prefetch=%" PRIu16, j + PREFETCH_OFFSET);
+            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j + PREFETCH_OFFSET], void *));
+            gps_i_forwarder_handle_packet(lcore, pkts_burst[j]);
+        }
+        for (; j < (int) burst_size; j++) {
+            gps_i_forwarder_handle_packet(lcore, pkts_burst[j]);
+        }
     }
     DEBUG("Process on lcore %u exit!", rte_lcore_id());
 }
@@ -102,22 +176,37 @@ main_loop_processor(void *params) {
 static int
 main_loop_control(void *params) {
     struct gps_i_forwarder_control_lcore *lcore = (struct gps_i_forwarder_control_lcore *) params;
+    struct rte_mbuf * pkts[DEFAULT_BURST_SIZE];
+    unsigned burst_size, j;
+
     DEBUG("lcore=%u, control", rte_lcore_id());
-    RTE_SET_USED(lcore);
-    while(running) {
-        
+
+    //    rte_delay_ms(70000);
+    //    running = false;
+
+    while (running) {
+        burst_size = rte_ring_dequeue_burst(lcore->incoming_ring, (void **) pkts, DEFAULT_BURST_SIZE, NULL);
+        for (j = 0; j < burst_size; j++) {
+            lcore->received_count++;
+            DEBUG("Got packet %p from incoming ring, data size=%" PRIu16 ", free", pkts[j], rte_pktmbuf_data_len(pkts[j]));
+            print_buf(rte_pktmbuf_mtod(pkts[j], void *), rte_pktmbuf_data_len(pkts[j]), 16);
+            rte_pktmbuf_free(pkts[j]);
+        }
+        urcu_qsbr_synchronize_rcu();
+        gps_i_forwarder_control_plane_cleanup(lcore->forwarder);
     }
+
     DEBUG("Control on lcore %u exit!", rte_lcore_id());
 }
 
 static void print_receiver_stat(struct receiver_params *p) {
-    DEBUG("receiver on port %" PRIu16 "\n  received: %" PRIu64 ", sent: %" PRIu64 ", discarded: %" PRIu64,
-            p->port_id, p->received_count, p->sent_count, p->discarded_count);
+    DEBUG("receiver on port %" PRIu16 "\n  received: %" PRIu64 ", sent: %" PRIu64,
+            p->port_id, p->received_count, p->sent_count);
 }
 
 static void print_sender_stat(struct sender_params *p) {
-    DEBUG("sender on port %" PRIu16 "\n  received: %" PRIu64 ", sent: %" PRIu64 ", discarded: %" PRIu64,
-            p->port_id, p->received_count, p->sent_count, p->discarded_count);
+    DEBUG("sender on port %" PRIu16 "\n  received: %" PRIu64 ", sent: %" PRIu64,
+            p->port_id, p->received_count, p->sent_count);
 }
 
 int main(int argc, char **argv) {
@@ -144,9 +233,10 @@ int main(int argc, char **argv) {
 
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
-    
+
     dump_mem("dmp_main_0.txt");
 
+    DEBUG("=======================CREATE PHASE=======================");
     port_count = rte_eth_dev_count_avail();
     lcore_count = rte_lcore_count();
     DEBUG("port_count=%" PRIu16 ", lcore_count=%u", port_count, lcore_count);
@@ -201,6 +291,19 @@ int main(int argc, char **argv) {
         enable_port(port, 1, forwarder_c->pkt_pool);
     }
 
+    struct gps_na dst_na, next_hop_na;
+    gps_i_routing_table_set(forwarder_c->routing_table,
+            gps_na_set(&dst_na, 0x14567),
+            gps_na_set(&next_hop_na, 0x24567),
+            1);
+    gps_i_routing_table_print(forwarder_c->routing_table, stdout, "MAIN: [%s():%d] routing table", __func__, __LINE__);
+    struct gps_i_neighbor_info * neighbor =
+            gps_i_neighbor_table_get_entry(forwarder_c->neighbor_table);
+    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:91:96", &neighbor->ether, sizeof (neighbor->ether));
+    gps_i_neighbor_table_set(forwarder_c->neighbor_table, &next_hop_na, neighbor);
+    gps_i_neighbor_table_print(forwarder_c->neighbor_table, stdout, "MAIN: [%s():%d] neighbor table", __func__, __LINE__);
+
+
     control_lcore = gps_i_forwarder_control_lcore_create("ctrl", forwarder_c, outgoing_rings, port_count, rte_socket_id());
     if (unlikely(control_lcore == NULL)) {
         FAIL("Cannot create control_lcore");
@@ -224,7 +327,7 @@ int main(int argc, char **argv) {
         process_lcores[port] = gps_i_forwarder_process_lcore_create(tmp_name,
                 forwarder_d, control_lcore->incoming_ring, outgoing_rings,
                 port_count, rte_socket_id());
-        rte_eal_remote_launch(main_loop_processor, &process_lcores[port], lcore);
+        rte_eal_remote_launch(main_loop_processor, process_lcores[port], lcore);
 
         receiver_params[port].to_processor = process_lcores[port]->incoming_ring;
         receiver_params[port].port_id = port;

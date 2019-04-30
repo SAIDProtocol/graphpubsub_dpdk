@@ -13,7 +13,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
+//#define GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
 
 #ifdef GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
 #include <rte_log.h>

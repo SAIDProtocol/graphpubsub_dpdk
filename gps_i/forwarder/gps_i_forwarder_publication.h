@@ -12,7 +12,7 @@ extern "C" {
 
 #include "gps_i_forwarder_common.h"
 
-#define GPS_I_FORWARDER_PUBLICATION_DEBUG
+//#define GPS_I_FORWARDER_PUBLICATION_DEBUG
 
 #ifdef GPS_I_FORWARDER_PUBLICATION_DEBUG
 #include <rte_log.h>
@@ -147,6 +147,7 @@ extern "C" {
     static __rte_always_inline void
     gps_i_forwarder_control_handle_publication(struct gps_i_forwarder_control_lcore *lcore, struct rte_mbuf *pkt) {
         RTE_SET_USED(lcore);
+        RTE_SET_USED(pkt);
         DEBUG("control handle publication, free pkt: %p", pkt);
     }
 

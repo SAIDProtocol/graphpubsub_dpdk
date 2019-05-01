@@ -154,7 +154,6 @@ main_loop_processor(void *params) {
     DEBUG("lcore=%u, process, ring:%p", rte_lcore_id(), lcore->incoming_ring);
     while (running) {
         burst_size = rte_ring_dequeue_burst(lcore->incoming_ring, (void **) pkts_burst, DEFAULT_BURST_SIZE, NULL);
-        lcore->received_count += burst_size;
         //        DEBUG("burst_size=%" PRIu16, burst_size);
 
         for (j = 0; j < PREFETCH_OFFSET && j < (int) burst_size; j++) {
@@ -299,7 +298,7 @@ int main(int argc, char **argv) {
     gps_i_routing_table_print(forwarder_c->routing_table, stdout, "MAIN: [%s():%d] routing table", __func__, __LINE__);
     struct gps_i_neighbor_info * neighbor =
             gps_i_neighbor_table_get_entry(forwarder_c->neighbor_table);
-    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:91:96", &neighbor->ether, sizeof (neighbor->ether));
+    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c2", &neighbor->ether, sizeof (neighbor->ether));
     gps_i_neighbor_table_set(forwarder_c->neighbor_table, &next_hop_na, neighbor);
     gps_i_neighbor_table_print(forwarder_c->neighbor_table, stdout, "MAIN: [%s():%d] neighbor table", __func__, __LINE__);
 

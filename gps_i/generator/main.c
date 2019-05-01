@@ -224,6 +224,10 @@ int main(int argc, char **argv) {
     }
 
     main_loop_generator(&param);
+    
+    RTE_LCORE_FOREACH_SLAVE(lcore) {
+        rte_eal_wait_lcore(lcore);
+    }
 
     rte_eth_dev_stop(0);
     rte_eth_dev_close(0);

@@ -6,6 +6,7 @@
 #include <cmdline_parse_etheraddr.h>
 #include <gps_headers.h>
 #include <rte_eal.h>
+#include <rte_lcore.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
 #include <rte_ether.h>
@@ -34,7 +35,7 @@
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define MAX_PKT_BURST 64
 #define PKT_SIZE 64
-#define NUM_PKT_TO_SEND 500000000
+#define NUM_PKT_TO_SEND 100000000
 
 static void
 print_buf(const void *buf, uint32_t size, uint32_t wrap) {
@@ -88,7 +89,7 @@ generate_packets(const struct ether_addr *src, const struct ether_addr *dst,
             gps_guid_set(&src_guid, 0x89abcdef),
             gps_guid_set(&dst_guid, 0xdeadbeef),
             gps_na_set(&src_na, 0),
-            gps_na_set(&dst_na, 0x134567),
+            gps_na_set(&dst_na, 0x14567),
             payload_size);
 
     rte_pktmbuf_append(candidates->pkts[0], payload_size);
@@ -102,6 +103,51 @@ struct generator_param {
     struct rte_mempool *clone_pool;
 };
 
+bool running = false;
+
+static int
+main_loop_generator_slave(void *param) {
+    struct generator_param *p = (struct generator_param *) param;
+
+    struct rte_mbuf * pkts_burst[MAX_PKT_BURST], *pkt;
+    uint64_t total = 0, dropped = 0, start, end;
+    uint16_t i, remain;
+
+    while (!unlikely(running));
+    start = rte_get_timer_cycles();
+    remain = 0;
+
+    while (likely(running)) {
+        for (i = remain; i < MAX_PKT_BURST; i++) {
+            pkt = rte_pktmbuf_alloc(p->clone_pool);
+            if (unlikely(pkt == NULL))
+                FAIL("Cannot allocate packet buffer, total=%" PRIu64 ".\n", total);
+            pkts_burst[i] = pkt;
+
+            //            rte_memcpy(rte_pktmbuf_append(pkt, PKT_SIZE),
+            //                    rte_pktmbuf_mtod(p->candidates->pkts[lrand48() % p->candidates->size], void *), PKT_SIZE);
+            rte_memcpy(rte_pktmbuf_append(pkt, PKT_SIZE),
+                    rte_pktmbuf_mtod(p->candidates->pkts[0], void *), PKT_SIZE);
+
+            *rte_pktmbuf_mtod_offset(pkt, uint8_t *, PKT_SIZE - sizeof (uint64_t) - 1) = 1;
+            *rte_pktmbuf_mtod_offset(pkt, uint64_t *, PKT_SIZE - sizeof (uint64_t)) =
+                    rte_cpu_to_be_64(total + i - remain);
+        }
+        i = rte_eth_tx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
+        total += i;
+        remain = MAX_PKT_BURST - i;
+        if (unlikely(remain > 0)) {
+            dropped += remain;
+            for (i = 0; i < remain; i++) {
+                pkts_burst[i] = pkts_burst[MAX_PKT_BURST - remain];
+            }
+        }
+    }
+    end = rte_get_timer_cycles();
+    DEBUG("%u\t%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64,
+            rte_lcore_id(), total, start, end, rte_get_timer_hz(), dropped);
+}
+
 static int
 main_loop_generator(void *param) {
     struct generator_param *p = (struct generator_param *) param;
@@ -111,6 +157,7 @@ main_loop_generator(void *param) {
     uint16_t i, remain;
 
     rte_delay_ms(2000);
+    running = true;
     start = rte_get_timer_cycles();
     remain = 0;
 
@@ -142,6 +189,7 @@ main_loop_generator(void *param) {
 
 
     }
+    running = false;
     end = rte_get_timer_cycles();
     DEBUG("%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64, total, start, end, rte_get_timer_hz(), dropped);
 
@@ -150,6 +198,7 @@ main_loop_generator(void *param) {
 
 int main(int argc, char **argv) {
     int ret;
+    unsigned lcore;
     struct rte_mempool *pkt_pool;
     struct ether_addr src, dst;
     struct generator_param param;
@@ -160,8 +209,8 @@ int main(int argc, char **argv) {
     argv += ret;
 
 
-    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:91:96", &dst, sizeof (dst));
-    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c6", &src, sizeof (src));
+    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:91:96", &src, sizeof (src));
+    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c6", &dst, sizeof (dst));
 
     pkt_pool = rte_pktmbuf_pool_create("pkt_pool", PKT_MBUF_SIZE, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
     param.candidates = generate_packets(&src, &dst, pkt_pool);
@@ -169,6 +218,10 @@ int main(int argc, char **argv) {
 
     enable_port(0, 1, pkt_pool);
     check_all_ports_link_status();
+
+    RTE_LCORE_FOREACH_SLAVE(lcore) {
+        rte_eal_remote_launch(main_loop_generator_slave, &param, lcore);
+    }
 
     main_loop_generator(&param);
 

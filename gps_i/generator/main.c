@@ -31,7 +31,7 @@
     printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__)
 
 
-#define PKT_MBUF_SIZE 8192
+#define PKT_MBUF_SIZE 16384
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define MAX_PKT_BURST 64
 #define PKT_SIZE 64
@@ -101,13 +101,15 @@ generate_packets(const struct ether_addr *src, const struct ether_addr *dst,
 struct generator_param {
     struct candidate_buf *candidates;
     struct rte_mempool *clone_pool;
+    uint16_t queue_id;
 };
 
-bool running = false;
+volatile bool running = false;
 
 static int
 main_loop_generator_slave(void *param) {
     struct generator_param *p = (struct generator_param *) param;
+    DEBUG("lcore=%u, queue=%" PRIu16, rte_lcore_id(), p->queue_id);
 
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST], *pkt;
     uint64_t total = 0, dropped = 0, start, end;
@@ -133,7 +135,7 @@ main_loop_generator_slave(void *param) {
             *rte_pktmbuf_mtod_offset(pkt, uint64_t *, PKT_SIZE - sizeof (uint64_t)) =
                     rte_cpu_to_be_64(total + i - remain);
         }
-        i = rte_eth_tx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
+        i = rte_eth_tx_burst(0, p->queue_id, pkts_burst, MAX_PKT_BURST);
         total += i;
         remain = MAX_PKT_BURST - i;
         if (unlikely(remain > 0)) {
@@ -149,8 +151,9 @@ main_loop_generator_slave(void *param) {
 }
 
 static int
-main_loop_generator(void *param) {
+main_loop_generator_mastr(void *param) {
     struct generator_param *p = (struct generator_param *) param;
+    DEBUG("lcore=%u, queue=%" PRIu16, rte_lcore_id(), p->queue_id);
 
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST], *pkt;
     uint64_t total = 0, dropped = 0, start, end;
@@ -177,7 +180,7 @@ main_loop_generator(void *param) {
             *rte_pktmbuf_mtod_offset(pkt, uint64_t *, PKT_SIZE - sizeof (uint64_t)) =
                     rte_cpu_to_be_64(total + i - remain);
         }
-        i = rte_eth_tx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
+        i = rte_eth_tx_burst(0, p->queue_id, pkts_burst, MAX_PKT_BURST);
         total += i;
         remain = MAX_PKT_BURST - i;
         if (unlikely(remain > 0)) {
@@ -191,17 +194,17 @@ main_loop_generator(void *param) {
     }
     running = false;
     end = rte_get_timer_cycles();
-    DEBUG("%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64, total, start, end, rte_get_timer_hz(), dropped);
-
-    DEBUG("clone_pool=%p, candidates=%p", p->clone_pool, p->candidates);
+    DEBUG("%u\t%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64,
+            rte_lcore_id(), total, start, end, rte_get_timer_hz(), dropped);
 }
 
 int main(int argc, char **argv) {
     int ret;
     unsigned lcore;
-    struct rte_mempool *pkt_pool;
+    struct rte_mempool *pkt_pool, *clone_pool;
     struct ether_addr src, dst;
-    struct generator_param param;
+    struct generator_param *params;
+    struct candidate_buf *candidates;
 
     ret = rte_eal_init(argc, argv);
     if (ret < 0) FAIL("Invalid EAL parameters.");
@@ -209,22 +212,42 @@ int main(int argc, char **argv) {
     argv += ret;
 
 
+    pkt_pool = rte_pktmbuf_pool_create("pkt_pool", PKT_MBUF_SIZE, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
+    if (pkt_pool == NULL)
+        FAIL("Cannot create pkt_pool, reason: %s", rte_strerror(rte_errno));
+    clone_pool = rte_pktmbuf_pool_create("clone_pool", PKT_MBUF_SIZE, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
+    if (clone_pool == NULL)
+        FAIL("Cannot create clone_pool, reason: %s", rte_strerror(rte_errno));
+
     cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:91:96", &src, sizeof (src));
     cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c6", &dst, sizeof (dst));
+    candidates = generate_packets(&src, &dst, pkt_pool);
 
-    pkt_pool = rte_pktmbuf_pool_create("pkt_pool", PKT_MBUF_SIZE, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
-    param.candidates = generate_packets(&src, &dst, pkt_pool);
-    param.clone_pool = rte_pktmbuf_pool_create("clone_pool", PKT_MBUF_SIZE, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
 
-    enable_port(0, 1, pkt_pool);
+
+    lcore = rte_lcore_count();
+    params = rte_zmalloc_socket("params", sizeof (struct generator_param) * lcore, 0, rte_socket_id());
+    if (params == NULL)
+        FAIL("Cannot create params, reason: %s", rte_strerror(rte_errno));
+
+    enable_port(0, lcore, pkt_pool);
     check_all_ports_link_status();
 
+    ret = 0;
+
     RTE_LCORE_FOREACH_SLAVE(lcore) {
-        rte_eal_remote_launch(main_loop_generator_slave, &param, lcore);
+        params[ret].candidates = candidates;
+        params[ret].clone_pool = clone_pool;
+        params[ret].queue_id = ret;
+        rte_eal_remote_launch(main_loop_generator_slave, &params[ret], lcore);
+        ret++;
     }
 
-    main_loop_generator(&param);
-    
+    params[ret].candidates = candidates;
+    params[ret].clone_pool = clone_pool;
+    params[ret].queue_id = ret;
+    main_loop_generator_mastr(&params[ret]);
+
     RTE_LCORE_FOREACH_SLAVE(lcore) {
         rte_eal_wait_lcore(lcore);
     }

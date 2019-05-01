@@ -100,7 +100,7 @@ generate_packets(const struct ether_addr *src, const struct ether_addr *dst,
 
 struct generator_param {
     struct candidate_buf *candidates;
-    struct rte_mempool *clone_pool;
+    struct rte_mempool *packet_pool;
     uint16_t queue_id;
 };
 
@@ -121,7 +121,7 @@ main_loop_generator_slave(void *param) {
 
     while (likely(running)) {
         for (i = remain; i < MAX_PKT_BURST; i++) {
-            pkt = rte_pktmbuf_alloc(p->clone_pool);
+            pkt = rte_pktmbuf_alloc(p->packet_pool);
             if (unlikely(pkt == NULL))
                 FAIL("Cannot allocate packet buffer, total=%" PRIu64 ".\n", total);
             pkts_burst[i] = pkt;
@@ -131,7 +131,7 @@ main_loop_generator_slave(void *param) {
             rte_memcpy(rte_pktmbuf_append(pkt, PKT_SIZE),
                     rte_pktmbuf_mtod(p->candidates->pkts[0], void *), PKT_SIZE);
 
-            *rte_pktmbuf_mtod_offset(pkt, uint8_t *, PKT_SIZE - sizeof (uint64_t) - 1) = 1;
+            *rte_pktmbuf_mtod_offset(pkt, uint8_t *, PKT_SIZE - sizeof (uint64_t) - 1) = (uint8_t)p->queue_id;
             *rte_pktmbuf_mtod_offset(pkt, uint64_t *, PKT_SIZE - sizeof (uint64_t)) =
                     rte_cpu_to_be_64(total + i - remain);
         }
@@ -166,7 +166,7 @@ main_loop_generator_mastr(void *param) {
 
     while (likely(total < NUM_PKT_TO_SEND)) {
         for (i = remain; i < MAX_PKT_BURST; i++) {
-            pkt = rte_pktmbuf_alloc(p->clone_pool);
+            pkt = rte_pktmbuf_alloc(p->packet_pool);
             if (unlikely(pkt == NULL))
                 FAIL("Cannot allocate packet buffer, total=%" PRIu64 ".\n", total);
             pkts_burst[i] = pkt;
@@ -176,7 +176,7 @@ main_loop_generator_mastr(void *param) {
             rte_memcpy(rte_pktmbuf_append(pkt, PKT_SIZE),
                     rte_pktmbuf_mtod(p->candidates->pkts[0], void *), PKT_SIZE);
 
-            *rte_pktmbuf_mtod_offset(pkt, uint8_t *, PKT_SIZE - sizeof (uint64_t) - 1) = 1;
+            *rte_pktmbuf_mtod_offset(pkt, uint8_t *, PKT_SIZE - sizeof (uint64_t) - 1) = (uint8_t)p->queue_id;
             *rte_pktmbuf_mtod_offset(pkt, uint64_t *, PKT_SIZE - sizeof (uint64_t)) =
                     rte_cpu_to_be_64(total + i - remain);
         }
@@ -201,7 +201,7 @@ main_loop_generator_mastr(void *param) {
 int main(int argc, char **argv) {
     int ret;
     unsigned lcore;
-    struct rte_mempool *pkt_pool, *clone_pool;
+    struct rte_mempool *pkt_pool;
     struct ether_addr src, dst;
     struct generator_param *params;
     struct candidate_buf *candidates;
@@ -215,15 +215,10 @@ int main(int argc, char **argv) {
     pkt_pool = rte_pktmbuf_pool_create("pkt_pool", PKT_MBUF_SIZE, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
     if (pkt_pool == NULL)
         FAIL("Cannot create pkt_pool, reason: %s", rte_strerror(rte_errno));
-    clone_pool = rte_pktmbuf_pool_create("clone_pool", PKT_MBUF_SIZE, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
-    if (clone_pool == NULL)
-        FAIL("Cannot create clone_pool, reason: %s", rte_strerror(rte_errno));
 
     cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:91:96", &src, sizeof (src));
     cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c6", &dst, sizeof (dst));
     candidates = generate_packets(&src, &dst, pkt_pool);
-
-
 
     lcore = rte_lcore_count();
     params = rte_zmalloc_socket("params", sizeof (struct generator_param) * lcore, 0, rte_socket_id());
@@ -237,20 +232,23 @@ int main(int argc, char **argv) {
 
     RTE_LCORE_FOREACH_SLAVE(lcore) {
         params[ret].candidates = candidates;
-        params[ret].clone_pool = clone_pool;
+        params[ret].packet_pool = pkt_pool;
         params[ret].queue_id = ret;
         rte_eal_remote_launch(main_loop_generator_slave, &params[ret], lcore);
         ret++;
     }
 
     params[ret].candidates = candidates;
-    params[ret].clone_pool = clone_pool;
+    params[ret].packet_pool = pkt_pool;
     params[ret].queue_id = ret;
     main_loop_generator_mastr(&params[ret]);
 
     RTE_LCORE_FOREACH_SLAVE(lcore) {
         rte_eal_wait_lcore(lcore);
     }
+    
+    rte_free(params);
+    rte_mempool_free(pkt_pool);
 
     rte_eth_dev_stop(0);
     rte_eth_dev_close(0);

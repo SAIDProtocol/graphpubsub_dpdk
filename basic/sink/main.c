@@ -73,18 +73,19 @@ static int parse_args(int argc, char **argv) {
     return 0;
 }
 
-//static inline void calculate_hit(struct rte_mbuf *pkt) {
-//    struct ether_hdr *hdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
-//    if (is_same_ether_addr(&hdr->s_addr, &src_addr) && hdr->ether_type == ether_type) {
-//        hit++;
-//    }
-//    rte_pktmbuf_free(pkt);
-//}
+static inline void calculate_hit(struct rte_mbuf *pkt) {
+    struct ether_hdr *hdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
+    if (is_same_ether_addr(&hdr->s_addr, &src_addr) && hdr->ether_type == ether_type) {
+        hit++;
+    }
+    rte_pktmbuf_free(pkt);
+}
 
 __attribute__ ((noreturn))
 static int main_loop(__rte_unused void *dummy) {
     struct rte_mbuf * pkts_burst[MAX_PKT_BURST];
     uint16_t received;
+    int j;
 
     printf("lcore=%u, port=%" PRIu16 ", rte_socket_id=%u\n", rte_lcore_id(), 0, rte_socket_id());
 
@@ -92,27 +93,19 @@ static int main_loop(__rte_unused void *dummy) {
     for (;;) {
         received = rte_eth_rx_burst(0, 0, pkts_burst, MAX_PKT_BURST);
         count += received;
-	if (likely(received > 0)) {
-//            rte_delay_ms(1000);
-//            if (received < MAX_PKT_BURST) n_full++;
-//            else full++;
-            while (likely(received > 0)) {
-                rte_pktmbuf_free(pkts_burst[--received]);
-            }
-	}
-//        /* Prefetch first packets */
-//        for (j = 0; j < PREFETCH_OFFSET && j < received; j++) {
-//            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
-//        }
-//        /* Prefetch and forward already prefetched packets */
-//        for (j = 0; j < (received - PREFETCH_OFFSET); j++) {
-//            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[ j + PREFETCH_OFFSET], void *));
-//            calculate_hit(pkts_burst[j]);
-//        }
-//        /* Forward remaining prefetched packets */
-//        for (; j < received; j++) {
-//            calculate_hit(pkts_burst[j]);
-//        }
+        /* Prefetch first packets */
+        for (j = 0; j < PREFETCH_OFFSET && j < (int)received; j++) {
+            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
+        }
+        /* Prefetch and forward already prefetched packets */
+        for (j = 0; j < ((int)received - PREFETCH_OFFSET); j++) {
+            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[ j + PREFETCH_OFFSET], void *));
+            calculate_hit(pkts_burst[j]);
+        }
+        /* Forward remaining prefetched packets */
+        for (; j < received; j++) {
+            calculate_hit(pkts_burst[j]);
+        }
     }
 }
 

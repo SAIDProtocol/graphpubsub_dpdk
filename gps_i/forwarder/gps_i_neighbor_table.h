@@ -196,6 +196,10 @@ extern "C" {
     gps_i_neighbor_table_print(struct gps_i_neighbor_table *table,
             FILE *stream, const char *fmt, ...);
 
+    void
+    gps_i_neighbor_table_read(struct gps_i_neighbor_table *table,
+            FILE *input);
+    
 
 #ifdef __cplusplus
 }

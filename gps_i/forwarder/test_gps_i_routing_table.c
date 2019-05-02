@@ -285,7 +285,29 @@ test_routing_table_basic_1(void) {
             ret_na_p);
     printf("\n");
 
-//    gps_i_routing_table_cleanup(table);
+    //    gps_i_routing_table_cleanup(table);
+    gps_i_routing_table_destroy(table);
+}
+
+static void 
+test_routing_table_read(void) {
+    DEBUG_HEAD();
+    const char *file_name = "test_routing_table_read.txt";
+    struct gps_i_routing_table *table;
+
+    table = gps_i_routing_table_create("read", 2047, 4096, rte_socket_id());
+    if (table == NULL) FAIL("Cannot create table!");
+    DEBUG("table=%p", table);
+    printf("\n");
+    FILE *f = fopen(file_name, "r");
+    if (f == NULL) FAIL("Cannot open file: %s", file_name);
+    DEBUG("f=%p", f);
+
+    gps_i_routing_table_read(table, f, 16);
+    
+    gps_i_routing_table_print(table, stdout, "TEST_ROUTING_TABLE: [%s():%d] after read", __FUNCTION__, __LINE__);
+
+    fclose(f);
     gps_i_routing_table_destroy(table);
 }
 
@@ -294,4 +316,6 @@ test_routing_table(void) {
     dump_mem("dmp_test_routing_table_0.txt");
     test_routing_table_basic_1();
     dump_mem("dmp_test_routing_table_1.txt");
+    test_routing_table_read();
+    dump_mem("dmp_test_routing_table_2.txt");
 }

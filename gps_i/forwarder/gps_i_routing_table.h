@@ -212,7 +212,14 @@ extern "C" {
             FILE *stream, const char *fmt, ...);
 
 
-
+    /**
+     * Reads a file into routing table.
+     * 
+     * @param table The target routing table.
+     * @param input The input file.
+     */
+    void
+    gps_i_routing_table_read(struct gps_i_routing_table *table, FILE *input, unsigned values_to_free);
 
 #ifdef __cplusplus
 }

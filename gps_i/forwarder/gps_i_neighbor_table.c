@@ -3,24 +3,26 @@
  * Author: Jiachen Chen
  */
 
+#include <cmdline_parse_etheraddr.h>
+#include <cmdline_parse_ipaddr.h>
 #include <rte_branch_prediction.h>
 #include <rte_errno.h>
 #include <rte_jhash.h>
 #include <rte_malloc.h>
 #include "gps_i_neighbor_table.h"
 
-//#define GPS_I_NEIGHBOR_TABLE_DEBUG
-
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-#include <rte_log.h>
+#define GPS_I_NEIGHBOR_TABLE_DEBUG
 
 #define RTE_LOGTYPE_NEIGHBOR_TABLE RTE_LOGTYPE_USER1
-
+#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
+#include <rte_log.h>
 #define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy")
 #define _DEBUG(fmt, ...) RTE_LOG(INFO, NEIGHBOR_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
 #else
 #define DEBUG(...)
 #endif
+#define INFO(...) _INFO(__VA_ARGS__, "dummy")
+#define _INFO(fmt, ...) RTE_LOG(INFO, NEIGHBOR_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
 
 struct gps_i_neighbor_table *
 gps_i_neighbor_table_create(const char *type, uint32_t entries,
@@ -270,4 +272,127 @@ gps_i_neighbor_table_print(struct gps_i_neighbor_table *table,
     }
     fprintf(stream, ">>>>>>>>>>\n");
 
+}
+
+void
+gps_i_neighbor_table_read(struct gps_i_neighbor_table *table,
+        FILE *input) {
+    const char *delim = "\t ";
+    char *line = NULL, *token, *end;
+    size_t len = 0;
+    ssize_t read;
+    unsigned line_id = 0;
+    long int value;
+    struct gps_na next_hop_na;
+    uint16_t port;
+    struct ether_addr ether_addr;
+    struct gps_i_neighbor_info *info, *ret;
+
+//    union {
+//        uint32_t ip;
+//        uint8_t bytes[sizeof (uint32_t)];
+//    } ip;
+#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
+    char next_hop_na_buf[GPS_NA_FMT_SIZE], ether_buf[ETHER_ADDR_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+#endif
+
+    DEBUG("table=%p, input=%p", table, input);
+
+    while ((read = getline(&line, &len, input)) != -1) {
+        line_id++;
+        if (line[read - 1] == '\n') line[--read] = '\0';
+        if (line[read - 1] == '\r') line[--read] = '\0';
+        DEBUG("getline %u read=%zu, len=%zu", line_id, read, len);
+        DEBUG("line=\"%s\"", line);
+
+        token = strtok(line, delim);
+
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find next_hop_na, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, next_hop_na not pure number, skip.", line_id);
+            continue;
+        }
+        gps_na_set(&next_hop_na, (uint32_t) value);
+        DEBUG("NEXT_HOP_NA=%s", gps_na_format(next_hop_na_buf, sizeof (next_hop_na_buf), &next_hop_na));
+
+        token = strtok(NULL, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find port, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, port not pure number, skip.", line_id);
+            continue;
+        }
+        if (value < 0 || value > UINT16_MAX) {
+            INFO("Cannot read line %u, port (%ld) not in range [0,%d].", line_id, value, UINT16_MAX);
+            continue;
+        }
+        port = (uint16_t) value;
+        DEBUG("port=%" PRIu16, port);
+
+        token = strtok(NULL, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find ether.", line_id);
+            continue;
+        }
+        value = cmdline_parse_etheraddr(NULL, token, &ether_addr, sizeof (ether_addr));
+        if (value < 0) {
+            INFO("Cannot read line %u, cannot parse ether %s.", line_id, token);
+            continue;
+        }
+        ether_format_addr(ether_buf, sizeof (ether_buf), &ether_addr);
+        DEBUG("ether=%s", ether_buf);
+
+//        ip.ip = 0;
+        token = strtok(NULL, delim);
+        if (token != NULL) {
+            INFO("Skip ip lines for now...");
+            continue;
+            //            value = cmdline_parse_ipaddr(NULL, token, &ip.ip, sizeof (uint32_t));
+            //            if (value < 0) {
+            //                INFO("Cannot read line %u, cannot parse ip %s.", line_id, token);
+            //                continue;
+            //            }
+            //            ip.ip = rte_cpu_to_be_32(ip.ip);
+            //            DEBUG("ip=%" PRIu8 ".%" PRIu8 ".%" PRIu8 ".%" PRIu8, ip.bytes[0], ip.bytes[1], ip.bytes[2], ip.bytes[3]);
+        }
+        info = gps_i_neighbor_table_get_entry(table);
+        if (info == NULL) {
+            gps_i_neighbor_table_cleanup(table);
+            info = gps_i_neighbor_table_get_entry(table);
+            if (info == NULL) {
+                INFO("No entries in neighbor table! line: %u", line_id);
+                continue;
+            }
+        }
+        ether_addr_copy(&ether_addr, &info->ether);
+        info->port = port;
+        info->use_ip = false;
+        ret = gps_i_neighbor_table_set(table, &next_hop_na, info);
+        if (ret != NULL) {
+            if (ret != info) {
+                gps_i_neighbor_table_return_entry(table, ret);
+                gps_i_neighbor_table_cleanup(table);
+            } else {
+                INFO("Cannot add line %u: next_hop_na=%s info %s to table, ret=%p",
+                        line_id, gps_na_format(next_hop_na_buf, sizeof (next_hop_na_buf), &next_hop_na),
+                        gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info), ret);
+            }
+            gps_i_neighbor_table_return_entry(table, info);
+            gps_i_neighbor_table_cleanup(table);
+            continue;
+        }
+        DEBUG("Added line %u: next_hop_na=%s info %s to table, ret=%p",
+                line_id, gps_na_format(next_hop_na_buf, sizeof (next_hop_na_buf), &next_hop_na),
+                gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info), ret);
+    }
+
+    free(line);
+    gps_i_neighbor_table_cleanup(table);
 }

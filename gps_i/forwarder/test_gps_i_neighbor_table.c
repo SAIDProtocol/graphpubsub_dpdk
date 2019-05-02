@@ -462,6 +462,23 @@ test_neighbor_table_rcu_master(void) {
     gps_i_neighbor_table_destroy(param.table);
 }
 
+static void
+test_neighbor_table_read(void) {
+    const char *neighbor_table_file = "test_neighbor_table_read.txt";
+    struct gps_i_neighbor_table *table;
+
+    table = gps_i_neighbor_table_create("read", 511, 1024, rte_socket_id());
+    if (table == NULL) FAIL("Cannot create table.");
+    DEBUG("table=%p\n", table);
+
+    FILE *f = fopen(neighbor_table_file, "r");
+    if (f == NULL) FAIL("Cannot read neighbor table file: %s.", neighbor_table_file);
+
+    gps_i_neighbor_table_read(table, f);
+    gps_i_neighbor_table_print(table, stdout, "TEST_NEIGHBOR_TABLE [%s():%d] after read", __func__, __LINE__);
+    gps_i_neighbor_table_destroy(table);
+}
+
 void
 test_neighbor_table(void) {
     dump_mem("dmp_test_neighbor_table_0.txt");
@@ -471,5 +488,7 @@ test_neighbor_table(void) {
     dump_mem("dmp_test_neighbor_table_2.txt");
     test_neighbor_table_rcu_master();
     dump_mem("dmp_test_neighbor_table_3.txt");
+    test_neighbor_table_read();
+    dump_mem("dmp_test_neighbor_table_4.txt");
 }
 

@@ -8,13 +8,14 @@
 #include <rte_malloc.h>
 #include <rte_memzone.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 //#define GPS_I_ROUTING_TABLE_DEBUG
 
+#define RTE_LOGTYPE_ROUTING_TABLE RTE_LOGTYPE_USER1
+
 #ifdef GPS_I_ROUTING_TABLE_DEBUG
 #include <rte_log.h>
-
-#define RTE_LOGTYPE_ROUTING_TABLE RTE_LOGTYPE_USER1
 
 #define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy")
 #define _DEBUG(fmt, ...) RTE_LOG(INFO, ROUTING_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
@@ -22,6 +23,12 @@
 #else
 #define DEBUG(...)
 #endif
+
+#define INFO(...) _INFO(__VA_ARGS__, "dummy")
+#define _INFO(fmt, ...) RTE_LOG(INFO, ROUTING_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
+
+
+#define DEFAULT_LINE_SIZE 1024
 
 void
 gps_i_routing_entry_print(struct gps_i_routing_entry *entry,
@@ -394,3 +401,79 @@ gps_i_routing_table_print(struct gps_i_routing_table *table,
     fprintf(stream, ">>>>>>>>>>\n");
 
 }
+
+void
+gps_i_routing_table_read(struct gps_i_routing_table *table, FILE *input, unsigned values_to_free) {
+    const char *delim = "\t ";
+    char *line = NULL, *token, *end;
+    size_t len = 0;
+    ssize_t read;
+    unsigned line_id = 0, count = 0;
+    long int value;
+    struct gps_na dst_na, next_hop_na;
+    int32_t ret;
+#ifdef GPS_I_ROUTING_TABLE_DEBUG
+    char dst_na_buf[GPS_NA_FMT_SIZE], next_hop_na_buf[GPS_NA_FMT_SIZE];
+#endif
+
+    DEBUG("table=%p, input=%p", table, input);
+
+    while ((read = getline(&line, &len, input)) != -1) {
+        line_id++;
+        if (line[read - 1] == '\n') line[--read] = '\0';
+        if (line[read - 1] == '\r') line[--read] = '\0';
+        DEBUG("getline %u read=%zu, len=%zu", line_id, read, len);
+        DEBUG("line=\"%s\"", line);
+
+        token = strtok(line, delim);
+
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find dst_na, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, dst_na not pure number, skip.", line_id);
+            continue;
+        }
+        gps_na_set(&dst_na, (uint32_t) value);
+        DEBUG("DST_NA=%s", gps_na_format(dst_na_buf, sizeof (dst_na_buf), &dst_na));
+
+        token = strtok(NULL, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find next_hop_na, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, next_hop_na not pure number, skip.", line_id);
+            continue;
+        }
+        gps_na_set(&next_hop_na, (uint32_t) value);
+        DEBUG("NEXT_HOP_NA=%s", gps_na_format(next_hop_na_buf, sizeof (next_hop_na_buf), &next_hop_na));
+
+        token = strtok(NULL, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find distance, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, distance not pure number, skip.", line_id);
+            continue;
+        }
+        DEBUG("distance=%ld", value);
+
+        ret = gps_i_routing_table_set(table, &dst_na, &next_hop_na, (uint32_t) value);
+        if (ret < 0) {
+            INFO("Cannot add to table, ret=%" PRIi32, ret);
+        }
+        count++;
+        if (count == values_to_free)
+            gps_i_routing_table_cleanup(table);
+    }
+
+    free(line);
+    gps_i_routing_table_cleanup(table);
+}
+

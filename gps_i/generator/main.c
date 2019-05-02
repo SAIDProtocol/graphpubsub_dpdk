@@ -31,7 +31,7 @@
     printf("\n======%s:%d %s()======\n", __FILE__, __LINE__, __FUNCTION__)
 
 
-#define PKT_MBUF_SIZE 16384
+#define PKT_MBUF_SIZE 81920
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define MAX_PKT_BURST 64
 #define PKT_SIZE 64
@@ -141,7 +141,7 @@ main_loop_generator_slave(void *param) {
         if (unlikely(remain > 0)) {
             dropped += remain;
             for (i = 0; i < remain; i++) {
-                pkts_burst[i] = pkts_burst[MAX_PKT_BURST - remain];
+                pkts_burst[i] = pkts_burst[MAX_PKT_BURST - remain + i];
             }
         }
     }
@@ -186,11 +186,9 @@ main_loop_generator_mastr(void *param) {
         if (unlikely(remain > 0)) {
             dropped += remain;
             for (i = 0; i < remain; i++) {
-                pkts_burst[i] = pkts_burst[MAX_PKT_BURST - remain];
+                pkts_burst[i] = pkts_burst[MAX_PKT_BURST - remain + i];
             }
         }
-
-
     }
     running = false;
     end = rte_get_timer_cycles();

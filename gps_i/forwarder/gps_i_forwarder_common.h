@@ -35,17 +35,19 @@ extern "C" {
 #define _DEBUG(fmt, ...)
 #endif
 
-#define GPS_I_FORWARDER_NEIGHBOR_TABLE_SIZE 63
-#define GPS_I_FORWARDER_NEIGHBOR_TABLE_ENTRY_SIZE 128
-#define GPS_I_FORWARDER_ROUTING_TABLE_SIZE 1023
-#define GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE 1024
-#define GPS_I_FORWARDER_GNRS_CACHE_SIZE 1023
-#define GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE 2048
-#define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_SIZE 1023
-#define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRY_SIZE 2048
+#define GPS_I_FORWARDER_NEIGHBOR_TABLE_SIZE 511
+#define GPS_I_FORWARDER_NEIGHBOR_TABLE_ENTRY_SIZE 1024
+#define GPS_I_FORWARDER_ROUTING_TABLE_SIZE 2047
+#define GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE 2048
+#define GPS_I_FORWARDER_GNRS_CACHE_SIZE 2047
+#define GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE 4096
+#define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_SIZE 2047
+#define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRY_SIZE 2096
 #define GPS_I_FORWARDER_PKT_MBUF_SIZE 16384
 #define GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define GPS_I_FORWARDER_INCOMING_RING_SIZE 1024
+#define GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE "test_neighbor_table_read.txt"
+#define GPS_I_FORWARDER_ROUTING_TABLE_FILE "test_routing_table_read.txt"
 
     struct gps_i_forwarder_control_plane {
         struct gps_i_neighbor_table *neighbor_table;
@@ -78,6 +80,7 @@ extern "C" {
 
         char tmp_name[RTE_MEMZONE_NAMESIZE];
         struct gps_i_forwarder_control_plane *forwarder;
+        FILE *f;
 #ifdef  GPS_I_FORWARDER_COMMON_DEBUG
         char na_buf[GPS_NA_FMT_SIZE];
 #endif
@@ -101,6 +104,16 @@ extern "C" {
         }
         DEBUG("neighbor_table=%p", forwarder->neighbor_table);
 
+        f = fopen(GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE, "r");
+        if (f == NULL) {
+            DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE);
+        } else {
+            gps_i_neighbor_table_read(forwarder->neighbor_table, f);
+            fclose(f);
+        }
+        gps_i_neighbor_table_print(forwarder->neighbor_table, stdout, "");
+
+
         forwarder->routing_table = gps_i_routing_table_create(name,
                 GPS_I_FORWARDER_ROUTING_TABLE_SIZE,
                 GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE,
@@ -110,6 +123,15 @@ extern "C" {
             goto fail;
         }
         DEBUG("routing_table=%p", forwarder->routing_table);
+
+        f = fopen(GPS_I_FORWARDER_ROUTING_TABLE_FILE, "r");
+        if (f == NULL) {
+            DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_ROUTING_TABLE_FILE);
+        } else {
+            gps_i_routing_table_read(forwarder->routing_table, f, GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE);
+            fclose(f);
+        }
+        gps_i_routing_table_print(forwarder->routing_table, stdout, "");
 
         forwarder->gnrs_cache = gps_i_gnrs_cache_create(name,
                 GPS_I_FORWARDER_GNRS_CACHE_SIZE,

@@ -11,7 +11,7 @@
 #include <rte_malloc.h>
 #include "gps_i_neighbor_table.h"
 
-#define GPS_I_NEIGHBOR_TABLE_DEBUG
+//#define GPS_I_NEIGHBOR_TABLE_DEBUG
 
 #define RTE_LOGTYPE_NEIGHBOR_TABLE RTE_LOGTYPE_USER1
 #ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
@@ -292,8 +292,9 @@ gps_i_neighbor_table_read(struct gps_i_neighbor_table *table,
 //        uint32_t ip;
 //        uint8_t bytes[sizeof (uint32_t)];
 //    } ip;
+    char next_hop_na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
 #ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
-    char next_hop_na_buf[GPS_NA_FMT_SIZE], ether_buf[ETHER_ADDR_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+    char ether_buf[ETHER_ADDR_FMT_SIZE];
 #endif
 
     DEBUG("table=%p, input=%p", table, input);
@@ -346,7 +347,9 @@ gps_i_neighbor_table_read(struct gps_i_neighbor_table *table,
             INFO("Cannot read line %u, cannot parse ether %s.", line_id, token);
             continue;
         }
+#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
         ether_format_addr(ether_buf, sizeof (ether_buf), &ether_addr);
+#endif
         DEBUG("ether=%s", ether_buf);
 
 //        ip.ip = 0;

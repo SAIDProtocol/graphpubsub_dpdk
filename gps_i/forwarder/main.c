@@ -290,17 +290,17 @@ int main(int argc, char **argv) {
         enable_port(port, 1, forwarder_c->pkt_pool);
     }
 
-    struct gps_na dst_na, next_hop_na;
-    gps_i_routing_table_set(forwarder_c->routing_table,
-            gps_na_set(&dst_na, 0x14567),
-            gps_na_set(&next_hop_na, 0x24567),
-            1);
-    gps_i_routing_table_print(forwarder_c->routing_table, stdout, "MAIN: [%s():%d] routing table", __func__, __LINE__);
-    struct gps_i_neighbor_info * neighbor =
-            gps_i_neighbor_table_get_entry(forwarder_c->neighbor_table);
-    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c2", &neighbor->ether, sizeof (neighbor->ether));
-    gps_i_neighbor_table_set(forwarder_c->neighbor_table, &next_hop_na, neighbor);
-    gps_i_neighbor_table_print(forwarder_c->neighbor_table, stdout, "MAIN: [%s():%d] neighbor table", __func__, __LINE__);
+//    struct gps_na dst_na, next_hop_na;
+//    gps_i_routing_table_set(forwarder_c->routing_table,
+//            gps_na_set(&dst_na, 0x14567),
+//            gps_na_set(&next_hop_na, 0x24567),
+//            1);
+//    gps_i_routing_table_print(forwarder_c->routing_table, stdout, "MAIN: [%s():%d] routing table", __func__, __LINE__);
+//    struct gps_i_neighbor_info * neighbor =
+//            gps_i_neighbor_table_get_entry(forwarder_c->neighbor_table);
+//    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c2", &neighbor->ether, sizeof (neighbor->ether));
+//    gps_i_neighbor_table_set(forwarder_c->neighbor_table, &next_hop_na, neighbor);
+//    gps_i_neighbor_table_print(forwarder_c->neighbor_table, stdout, "MAIN: [%s():%d] neighbor table", __func__, __LINE__);
 
 
     control_lcore = gps_i_forwarder_control_lcore_create("ctrl", forwarder_c, outgoing_rings, port_count, rte_socket_id());

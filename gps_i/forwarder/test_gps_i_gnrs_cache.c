@@ -146,7 +146,7 @@ static void test_gnrs_cache_basic_1(void) {
 
 static void
 test_gnrs_cache_read(void) {
-    const char *file_name = "test_gnrs_cache_read.txt";
+    const char *file_name = "test_read_gnrs_cache.txt";
     DEBUG_HEAD();
 
     struct gps_i_gnrs_cache *cache;

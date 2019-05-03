@@ -292,7 +292,7 @@ test_routing_table_basic_1(void) {
 static void 
 test_routing_table_read(void) {
     DEBUG_HEAD();
-    const char *file_name = "test_routing_table_read.txt";
+    const char *file_name = "test_read_routing_table.txt";
     struct gps_i_routing_table *table;
 
     table = gps_i_routing_table_create("read", 2047, 4096, rte_socket_id());

@@ -13,13 +13,11 @@
 //#define GPS_I_ROUTING_TABLE_DEBUG
 
 #define RTE_LOGTYPE_ROUTING_TABLE RTE_LOGTYPE_USER1
-
-#ifdef GPS_I_ROUTING_TABLE_DEBUG
 #include <rte_log.h>
 
+#ifdef GPS_I_ROUTING_TABLE_DEBUG
 #define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy")
 #define _DEBUG(fmt, ...) RTE_LOG(INFO, ROUTING_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
-
 #else
 #define DEBUG(...)
 #endif

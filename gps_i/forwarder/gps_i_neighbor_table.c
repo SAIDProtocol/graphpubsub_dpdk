@@ -14,13 +14,15 @@
 //#define GPS_I_NEIGHBOR_TABLE_DEBUG
 
 #define RTE_LOGTYPE_NEIGHBOR_TABLE RTE_LOGTYPE_USER1
-#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
 #include <rte_log.h>
+
+#ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
 #define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy")
 #define _DEBUG(fmt, ...) RTE_LOG(INFO, NEIGHBOR_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
 #else
 #define DEBUG(...)
 #endif
+
 #define INFO(...) _INFO(__VA_ARGS__, "dummy")
 #define _INFO(fmt, ...) RTE_LOG(INFO, NEIGHBOR_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
 
@@ -275,8 +277,7 @@ gps_i_neighbor_table_print(struct gps_i_neighbor_table *table,
 }
 
 void
-gps_i_neighbor_table_read(struct gps_i_neighbor_table *table,
-        FILE *input) {
+gps_i_neighbor_table_read(struct gps_i_neighbor_table *table, FILE *input) {
     const char *delim = "\t ";
     char *line = NULL, *token, *end;
     size_t len = 0;
@@ -288,10 +289,10 @@ gps_i_neighbor_table_read(struct gps_i_neighbor_table *table,
     struct ether_addr ether_addr;
     struct gps_i_neighbor_info *info, *ret;
 
-//    union {
-//        uint32_t ip;
-//        uint8_t bytes[sizeof (uint32_t)];
-//    } ip;
+    //    union {
+    //        uint32_t ip;
+    //        uint8_t bytes[sizeof (uint32_t)];
+    //    } ip;
     char next_hop_na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
 #ifdef GPS_I_NEIGHBOR_TABLE_DEBUG
     char ether_buf[ETHER_ADDR_FMT_SIZE];
@@ -352,7 +353,7 @@ gps_i_neighbor_table_read(struct gps_i_neighbor_table *table,
 #endif
         DEBUG("ether=%s", ether_buf);
 
-//        ip.ip = 0;
+        //        ip.ip = 0;
         token = strtok(NULL, delim);
         if (token != NULL) {
             INFO("Skip ip lines for now...");

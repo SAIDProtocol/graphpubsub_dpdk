@@ -219,7 +219,8 @@ extern "C" {
      * @param input The input file.
      */
     void
-    gps_i_routing_table_read(struct gps_i_routing_table *table, FILE *input, unsigned values_to_free);
+    gps_i_routing_table_read(struct gps_i_routing_table *table, FILE *input,
+            unsigned values_to_free);
 
 #ifdef __cplusplus
 }

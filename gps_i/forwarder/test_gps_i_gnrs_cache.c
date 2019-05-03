@@ -144,13 +144,36 @@ static void test_gnrs_cache_basic_1(void) {
     gps_i_gnrs_cache_destroy(cache);
 }
 
+static void
+test_gnrs_cache_read(void) {
+    const char *file_name = "test_gnrs_cache_read.txt";
+    DEBUG_HEAD();
+
+    struct gps_i_gnrs_cache *cache;
+
+    cache = gps_i_gnrs_cache_create("read", 511, 1024, rte_socket_id());
+    if (cache == NULL) FAIL("Cannot create cache.");
+    DEBUG("cache=%p", cache);
+    printf("\n");
+    
+    FILE *f = fopen(file_name, "r");
+    if (f == NULL) FAIL("Cannot open file: %s", file_name);
+    DEBUG("f=%p", f);
+    
+    gps_i_gnrs_cache_read(cache, f, 512);
+    gps_i_gnrs_cache_print(cache, stdout, "TEST_GNRS_CACHE [%s():%d] after read", __func__, __LINE__);
+    
+    fclose(f);
+    gps_i_gnrs_cache_destroy(cache);
+}
+
 void
 test_gnrs_cache(void) {
 
     test_gnrs_entry();
-
     dump_mem("dmp_test_gnrs_cache_0.txt");
     test_gnrs_cache_basic_1();
-
     dump_mem("dmp_test_gnrs_cache_1.txt");
+    test_gnrs_cache_read();
+    dump_mem("dmp_test_gnrs_cache_2.txt");
 }

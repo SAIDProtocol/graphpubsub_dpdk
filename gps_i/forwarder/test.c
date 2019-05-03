@@ -37,9 +37,9 @@ main(int argc, char **argv) {
     argv += ret;
 
     //    test_anno();
-    test_neighbor_table();
+    //    test_neighbor_table();
     //    test_routing_table();
-    //    test_gnrs_cache();
+    test_gnrs_cache();
     //    test_forwarder_logic();
 
     return 0;

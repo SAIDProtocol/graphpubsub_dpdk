@@ -48,6 +48,7 @@ extern "C" {
 #define GPS_I_FORWARDER_INCOMING_RING_SIZE 1024
 #define GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE "test_neighbor_table_read.txt"
 #define GPS_I_FORWARDER_ROUTING_TABLE_FILE "test_routing_table_read.txt"
+#define GPS_I_FORWARDER_GNRS_CACHE_FILE "test_gnrs_cache_read.txt"
 
     struct gps_i_forwarder_control_plane {
         struct gps_i_neighbor_table *neighbor_table;
@@ -113,7 +114,6 @@ extern "C" {
         }
         gps_i_neighbor_table_print(forwarder->neighbor_table, stdout, "");
 
-
         forwarder->routing_table = gps_i_routing_table_create(name,
                 GPS_I_FORWARDER_ROUTING_TABLE_SIZE,
                 GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE,
@@ -142,6 +142,15 @@ extern "C" {
             goto fail;
         }
         DEBUG("gnrs_cache=%p", forwarder->gnrs_cache);
+
+        f = fopen(GPS_I_FORWARDER_GNRS_CACHE_FILE, "r");
+        if (f == NULL) {
+            DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_GNRS_CACHE_FILE);
+        } else {
+            gps_i_gnrs_cache_read(forwarder->gnrs_cache, f, GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE);
+            fclose(f);
+        }
+        gps_i_gnrs_cache_print(forwarder->gnrs_cache, stdout, "");
 
         // subscription table
         // rp

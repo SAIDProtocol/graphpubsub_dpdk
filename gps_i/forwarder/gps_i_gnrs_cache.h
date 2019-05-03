@@ -168,6 +168,15 @@ extern "C" {
             FILE *stream, const char *fmt, ...);
 
 
+    /**
+     * Reads a file into gnrs cache.
+     * 
+     * @param table The target gnrs cache.
+     * @param input The input file.
+     */
+    void
+    gps_i_gnrs_cache_read(struct gps_i_gnrs_cache *cache, FILE *input, unsigned value_slots);
+
 #ifdef __cplusplus
 }
 #endif

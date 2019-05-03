@@ -9,16 +9,18 @@
 
 //#define GPS_I_GNRS_CACHE_DEBUG
 
-#ifdef GPS_I_GNRS_CACHE_DEBUG
+#define RTE_LOGTYPE_GNRS_CACHE RTE_LOGTYPE_USER1
 #include <rte_log.h>
 
-#define RTE_LOGTYPE_GNRS_CACHE RTE_LOGTYPE_USER1
-
+#ifdef GPS_I_GNRS_CACHE_DEBUG
 #define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy")
 #define _DEBUG(fmt, ...) RTE_LOG(INFO, GNRS_CACHE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
 #else
 #define DEBUG(...)
 #endif
+
+#define INFO(...) _INFO(__VA_ARGS__, "dummy")
+#define _INFO(fmt, ...) RTE_LOG(INFO, GNRS_CACHE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
 
 struct gps_i_gnrs_cache *
 gps_i_gnrs_cache_create(const char *type, uint32_t entries,
@@ -145,6 +147,7 @@ gps_i_gnrs_cache_set(struct gps_i_gnrs_cache * cache,
         }
         gps_na_copy(&new_entry->na, na);
         new_entry->version = version;
+        orig_entry = NULL;
         position = rte_hash_add_key_data_x(cache->keys, guid, new_entry, (void **) &orig_entry);
         DEBUG("add %s->%s [%p], orig=%s [%p] ret=%" PRIi32,
                 gps_guid_format(guid_buf, sizeof (guid_buf), guid),
@@ -271,4 +274,83 @@ gps_i_gnrs_cache_print(struct gps_i_gnrs_cache *cache,
                 gps_i_gnrs_cache_entry_format(entry_buf, sizeof (entry_buf), entry));
     }
     fprintf(stream, ">>>>>>>>>>\n");
+}
+
+void
+gps_i_gnrs_cache_read(struct gps_i_gnrs_cache *cache, FILE *input, unsigned value_slots) {
+    const char *delim = "\t ";
+    char *line = NULL, *token, *end;
+    size_t len = 0;
+    ssize_t read;
+    unsigned line_id = 0;
+    long int value;
+    struct gps_na dst_na;
+    struct gps_guid dst_guid;
+    int32_t ret;
+    uint32_t prefix = rte_cpu_to_be_32(0xdeadbeef);
+    char dst_guid_buf[GPS_GUID_FMT_SIZE], dst_na_buf[GPS_NA_FMT_SIZE];
+
+    DEBUG("table=%p, input=%p", cache, input);
+    while ((read = getline(&line, &len, input)) != -1) {
+        line_id++;
+        if (line[read - 1] == '\n') line[--read] = '\0';
+        if (line[read - 1] == '\r') line[--read] = '\0';
+        DEBUG("getline %u read=%zu, len=%zu", line_id, read, len);
+        DEBUG("line=\"%s\"", line);
+
+        token = strtok(line, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find dst_guid, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, dst_guid not pure number, skip.", line_id);
+            continue;
+        }
+        gps_guid_set(&dst_guid, (uint32_t) value);
+        memcpy(&dst_guid, &prefix, sizeof (uint32_t));
+        DEBUG("guid=%s", gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), &dst_guid));
+
+        token = strtok(NULL, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find dst_na, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, dst_na not pure number, skip.", line_id);
+            continue;
+        }
+        gps_na_set(&dst_na, (uint32_t) value);
+        DEBUG("na=%s", gps_na_format(dst_na_buf, sizeof (dst_na_buf), &dst_na));
+
+        token = strtok(NULL, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find version, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, version not pure number, skip.", line_id);
+            continue;
+        }
+        DEBUG("version=%" PRIu32, (uint32_t) value);
+
+        if (line_id % value_slots == 0)
+            gps_i_gnrs_cache_cleanup(cache);
+
+        ret = gps_i_gnrs_cache_set(cache, &dst_guid, &dst_na, (uint32_t) value);
+        if (ret < 0) {
+            INFO("Cannot insert line %u, guid=%s, na=%s into cache", line_id,
+                    gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), &dst_guid),
+                    gps_na_format(dst_na_buf, sizeof (dst_na_buf), &dst_na));
+            continue;
+        }
+        DEBUG("Insert line %u, guid=%s, na=%s into cache, ret=%" PRIi32, line_id,
+                gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), &dst_guid),
+                gps_na_format(dst_na_buf, sizeof (dst_na_buf), &dst_na), ret);
+    }
+
+    gps_i_gnrs_cache_cleanup(cache);
 }

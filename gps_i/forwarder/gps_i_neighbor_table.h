@@ -196,10 +196,15 @@ extern "C" {
     gps_i_neighbor_table_print(struct gps_i_neighbor_table *table,
             FILE *stream, const char *fmt, ...);
 
+    /**
+     * Reads a file into neighbor table.
+     * 
+     * @param table The target neighbor table.
+     * @param input The input file.
+     */
     void
-    gps_i_neighbor_table_read(struct gps_i_neighbor_table *table,
-            FILE *input);
-    
+    gps_i_neighbor_table_read(struct gps_i_neighbor_table *table, FILE *input);
+
 
 #ifdef __cplusplus
 }

@@ -42,13 +42,13 @@ extern "C" {
 #define GPS_I_FORWARDER_GNRS_CACHE_SIZE 2047
 #define GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE 4096
 #define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_SIZE 2047
-#define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRY_SIZE 2096
+#define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRY_SIZE 4096
 #define GPS_I_FORWARDER_PKT_MBUF_SIZE 16384
 #define GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define GPS_I_FORWARDER_INCOMING_RING_SIZE 1024
-#define GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE "test_neighbor_table_read.txt"
-#define GPS_I_FORWARDER_ROUTING_TABLE_FILE "test_routing_table_read.txt"
-#define GPS_I_FORWARDER_GNRS_CACHE_FILE "test_gnrs_cache_read.txt"
+#define GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE "test_read_neighbor_table.txt"
+#define GPS_I_FORWARDER_ROUTING_TABLE_FILE "test_read_routing_table.txt"
+#define GPS_I_FORWARDER_GNRS_CACHE_FILE "test_read_gnrs_cache.txt"
 
     struct gps_i_forwarder_control_plane {
         struct gps_i_neighbor_table *neighbor_table;

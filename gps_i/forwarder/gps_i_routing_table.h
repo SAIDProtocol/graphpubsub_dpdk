@@ -28,7 +28,7 @@ extern "C" {
     };
 
     void
-    gps_i_routing_entry_print(struct gps_i_routing_entry *entry,
+    gps_i_routing_entry_print(const struct gps_i_routing_entry *entry,
             FILE *stream, const char *fmt, ...);
 
     struct gps_i_routing_table {
@@ -53,7 +53,7 @@ extern "C" {
      * @param socket_id 
      *   The socket id.
      * @return 
-     *   - The neighbor table created
+     *   - The routing table created
      *   - NULL on error.
      */
     struct gps_i_routing_table *

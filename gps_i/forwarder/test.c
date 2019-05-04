@@ -13,6 +13,7 @@ void test_neighbor_table(void);
 void test_routing_table(void);
 void test_gnrs_cache(void);
 void test_forwarder_logic(void);
+void test_subscription_table(void);
 void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 void dump_mem(const char *file_name);
 
@@ -39,8 +40,9 @@ main(int argc, char **argv) {
     //    test_anno();
     //    test_neighbor_table();
     //    test_routing_table();
-    test_gnrs_cache();
+    //    test_gnrs_cache();
     //    test_forwarder_logic();
+    test_subscription_table();
 
     return 0;
 }

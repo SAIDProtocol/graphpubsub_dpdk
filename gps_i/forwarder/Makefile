@@ -9,9 +9,9 @@ ifeq ($(TEST),)
     SRCS-y := main.c link_helper.c
 else
     APP = test_gps_i_forwarder
-    SRCS-y := test.c test_gps_i_neighbor_table.c test_gps_i_routing_table.c test_gps_i_gnrs_cache.c test_gps_i_forwarder_logic.c
+    SRCS-y := test.c test_gps_i_neighbor_table.c test_gps_i_routing_table.c test_gps_i_gnrs_cache.c test_gps_i_forwarder_logic.c test_gps_i_subscription_table.c
 endif
-SRCS-y += gps_i_neighbor_table.c gps_i_routing_table.c  gps_i_gnrs_cache.c rte_cuckoo_hash.c
+SRCS-y += gps_i_neighbor_table.c gps_i_routing_table.c  gps_i_gnrs_cache.c gps_i_subscription_table.c rte_cuckoo_hash.c
 
 # Build using pkg-config variables if possible
 $(shell pkg-config --exists libdpdk)

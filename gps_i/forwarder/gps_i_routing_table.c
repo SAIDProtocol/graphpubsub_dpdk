@@ -26,10 +26,8 @@
 #define _INFO(fmt, ...) RTE_LOG(INFO, ROUTING_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
 
 
-#define DEFAULT_LINE_SIZE 1024
-
 void
-gps_i_routing_entry_print(struct gps_i_routing_entry *entry,
+gps_i_routing_entry_print(const struct gps_i_routing_entry *entry,
         FILE *stream, const char *fmt, ...) {
     va_list valist;
     char na_buf[GPS_NA_FMT_SIZE];

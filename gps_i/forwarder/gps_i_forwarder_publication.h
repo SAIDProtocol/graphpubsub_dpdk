@@ -9,15 +9,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE 0
-#define GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE 1
-#define GPS_I_FORWARDER_PUBLICATION_ACTION_COPY 2
-
-#define GPS_I_FORWARDER_PUBLICATION_ACTION GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
 
 #include "gps_i_forwarder_common.h"
 
-//#define GPS_I_FORWARDER_PUBLICATION_DEBUG
+    //#define GPS_I_FORWARDER_PUBLICATION_DEBUG
 
 #ifdef GPS_I_FORWARDER_PUBLICATION_DEBUG
 #include <rte_log.h>
@@ -144,16 +139,50 @@ extern "C" {
         gps_i_forwarder_encapsulate(lcore, pkt);
 
 #elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE
+        struct rte_mbuf *cloned;
         for (i = 0; i < entry->count - 1; i++) {
-
+            cloned = rte_pktmbuf_clone(pkt, lcore->forwarder->pkt_pool);
+            if (cloned == NULL) {
+                DEBUG("Cannot clone a new packet!");
+                break;
+            }
+            DEBUG("cloned=%p", cloned);
+            anno = rte_mbuf_to_priv(cloned);
+            gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
+            DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
+            gps_i_forwarder_encapsulate(lcore, cloned);
         }
+        // handle the last packet, use pkt itself.
+        anno = rte_mbuf_to_priv(pkt);
+        gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
+        DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
+        gps_i_forwarder_encapsulate(lcore, pkt);
 #elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
-
+        struct rte_mbuf *hdr;
+        rte_pktmbuf_refcnt_update(pkt, (uint16_t) entry->count - 1);
+        for (i = 0; i < entry->count; i++) {
+            if (unlikely((hdr = rte_pktmbuf_alloc(lcore->forwarder->hdr_pool)) == NULL)) {
+                DEBUG("Cannot create a new header!");
+                break;
+            }
+            hdr->next = pkt;
+            hdr->pkt_len = (uint16_t) (hdr->data_len + pkt->pkt_len);
+            hdr->nb_segs = pkt->nb_segs + 1;
+            hdr->port = pkt->port;
+            hdr->vlan_tci = pkt->vlan_tci;
+            hdr->vlan_tci_outer = pkt->vlan_tci_outer;
+            hdr->tx_offload = pkt->tx_offload;
+            hdr->hash = pkt->hash;
+//            gps_na_copy((struct gps_na *)rte_pktmbuf_prepend(hdr, sizeof(struct gps_na)), entry->next_hops + i);
+            anno = rte_mbuf_to_priv(hdr);
+            gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
+            DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
+            gps_i_forwarder_encapsulate(lcore, hdr);
+        }
+//        rte_pktmbuf_free(pkt);
 #else
 #error "Need to specify a correct GPS_I_FORWARDER_PUBLICATION_ACTION"
 #endif
-
-        DEBUG("Free publication packet: %p", pkt);
     }
 
     static __rte_always_inline void

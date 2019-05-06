@@ -44,9 +44,17 @@ extern "C" {
 #define GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE 4096
 #define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_SIZE 2047
 #define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE 2048
-#define GPS_I_FORWARDER_PKT_MBUF_SIZE 16384
+#define GPS_I_FORWARDER_PKT_MBUF_SIZE 16383
 #define GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
+#define GPS_I_FORWARDER_HDR_MBUF_SIZE 65535
+#define GPS_I_FORWARDER_HDR_MBUF_DATA_SIZE (2 * RTE_PKTMBUF_HEADROOM)
 #define GPS_I_FORWARDER_INCOMING_RING_SIZE 1024
+
+#define GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE 0
+#define GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE 1
+#define GPS_I_FORWARDER_PUBLICATION_ACTION_COPY 2
+
+#define GPS_I_FORWARDER_PUBLICATION_ACTION GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
 
     struct gps_i_forwarder_control_plane {
         struct gps_i_neighbor_table *neighbor_table;
@@ -57,6 +65,9 @@ extern "C" {
         struct gps_na my_na;
         struct gps_i_neighbor_info *my_encap_info; // one info for each outgoing port
         struct rte_mempool *pkt_pool;
+#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+        struct rte_mempool *hdr_pool;
+#endif
         // values that will not appear in const forwarder
         // gnrs pending table: will always change value, therefore, will not be in const forwarder
     };
@@ -71,6 +82,9 @@ extern "C" {
         const struct gps_na my_na;
         const struct gps_i_neighbor_info *my_encap_info;
         struct rte_mempool *pkt_pool;
+#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+        struct rte_mempool *hdr_pool;
+#endif
     };
 
     static __rte_always_inline struct gps_i_forwarder_control_plane *
@@ -137,7 +151,7 @@ extern "C" {
         // gnrs_pending_table
 
 
-        snprintf(tmp_name, sizeof (tmp_name), "POL_%s", name);
+        snprintf(tmp_name, sizeof (tmp_name), "POLP_%s", name);
         DEBUG("pkt_pool name: %s", tmp_name);
         forwarder->pkt_pool = rte_pktmbuf_pool_create(tmp_name,
                 GPS_I_FORWARDER_PKT_MBUF_SIZE, 32, sizeof (struct gps_i_anno),
@@ -149,6 +163,20 @@ extern "C" {
         DEBUG("pkt_pool: %p, n=%d, priv_size=%zd, data_size=%d",
                 forwarder->pkt_pool, GPS_I_FORWARDER_PKT_MBUF_SIZE,
                 sizeof (struct gps_i_anno), GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE);
+#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+        snprintf(tmp_name, sizeof (tmp_name), "POLH_%s", name);
+        DEBUG("hdr_pool name: %s", tmp_name);
+        forwarder->hdr_pool = rte_pktmbuf_pool_create(tmp_name,
+                GPS_I_FORWARDER_HDR_MBUF_SIZE, 32, sizeof (struct gps_i_anno),
+                GPS_I_FORWARDER_HDR_MBUF_DATA_SIZE, socket_id);
+        if (unlikely(forwarder->hdr_pool == NULL)) {
+            DEBUG("fail to create hdr_pool, reason: %s", rte_strerror(rte_errno));
+            goto fail;
+        }
+        DEBUG("hdr_pool: %p, n=%d, priv_size=%zd, data_size=%d",
+                forwarder->hdr_pool, GPS_I_FORWARDER_HDR_MBUF_SIZE,
+                sizeof (struct gps_i_anno), GPS_I_FORWARDER_HDR_MBUF_DATA_SIZE);
+#endif
 
         gps_na_copy(&forwarder->my_na, na);
         DEBUG("na=%s", gps_na_format(na_buf, sizeof (na_buf), &forwarder->my_na));
@@ -182,6 +210,12 @@ fail:
                 DEBUG("free pkt_pool=%p", forwarder->pkt_pool);
                 rte_mempool_free(forwarder->pkt_pool);
             }
+#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+            if (forwarder->hdr_pool != NULL) {
+                DEBUG("free hdr_pool=%p", forwarder->hdr_pool);
+                rte_mempool_free(forwarder->hdr_pool);
+            }
+#endif
             memset(forwarder, 0, sizeof (struct gps_i_forwarder_control_plane));
             rte_free(forwarder);
         }
@@ -212,6 +246,11 @@ fail:
 
         DEBUG("free pkt_pool=%p", forwarder->pkt_pool);
         rte_mempool_free(forwarder->pkt_pool);
+
+#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+        DEBUG("free hdr_pool=%p", forwarder->hdr_pool);
+        rte_mempool_free(forwarder->hdr_pool);
+#endif
 
         memset(forwarder, 0, sizeof (struct gps_i_forwarder_control_plane));
         DEBUG("free forwarder=%p", forwarder);

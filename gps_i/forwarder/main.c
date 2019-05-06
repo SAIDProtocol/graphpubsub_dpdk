@@ -324,7 +324,7 @@ int main(int argc, char **argv) {
         fclose(f);
     }
     gps_i_gnrs_cache_print(forwarder_c->gnrs_cache, stdout, "");
-    
+
     f = fopen(SUBSCRIPTION_TABLE_FILE_1, "r");
     if (f == NULL) {
         DEBUG("Cannot find file %s, skip.", SUBSCRIPTION_TABLE_FILE_1);
@@ -332,20 +332,20 @@ int main(int argc, char **argv) {
         gps_i_subscription_table_read(forwarder_c->subscription_table, f, GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE);
         fclose(f);
     }
-//    f = fopen(SUBSCRIPTION_TABLE_FILE_2, "r");
-//    if (f == NULL) {
-//        DEBUG("Cannot find file %s, skip.", SUBSCRIPTION_TABLE_FILE_2);
-//    } else {
-//        gps_i_subscription_table_read(forwarder_c->subscription_table, f, GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE);
-//        fclose(f);
-//    }
-//    f = fopen(SUBSCRIPTION_TABLE_FILE_3, "r");
-//    if (f == NULL) {
-//        DEBUG("Cannot find file %s, skip.", SUBSCRIPTION_TABLE_FILE_3);
-//    } else {
-//        gps_i_subscription_table_read(forwarder_c->subscription_table, f, GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE);
-//        fclose(f);
-//    }
+    f = fopen(SUBSCRIPTION_TABLE_FILE_2, "r");
+    if (f == NULL) {
+        DEBUG("Cannot find file %s, skip.", SUBSCRIPTION_TABLE_FILE_2);
+    } else {
+        gps_i_subscription_table_read(forwarder_c->subscription_table, f, GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE);
+        fclose(f);
+    }
+    f = fopen(SUBSCRIPTION_TABLE_FILE_3, "r");
+    if (f == NULL) {
+        DEBUG("Cannot find file %s, skip.", SUBSCRIPTION_TABLE_FILE_3);
+    } else {
+        gps_i_subscription_table_read(forwarder_c->subscription_table, f, GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE);
+        fclose(f);
+    }
     gps_i_subscription_table_print(forwarder_c->subscription_table, stdout, "");
 
 

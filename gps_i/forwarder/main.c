@@ -38,9 +38,12 @@
 #define DEFAULT_BURST_SIZE 64
 #define PREFETCH_OFFSET 3
 #define BURST_TX_DRAIN_US 100
-#define GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE "../test_read_neighbor_table.txt"
-#define GPS_I_FORWARDER_ROUTING_TABLE_FILE "../test_read_routing_table.txt"
-#define GPS_I_FORWARDER_GNRS_CACHE_FILE "../test_read_gnrs_cache.txt"
+#define NEIGHBOR_TABLE_FILE "../test_read_neighbor_table.txt"
+#define ROUTING_TABLE_FILE "../test_read_routing_table.txt"
+#define GNRS_CACHE_FILE "../test_read_gnrs_cache.txt"
+#define SUBSCRIPTION_TABLE_FILE_1 "../test_read_subscription_table_1.txt"
+#define SUBSCRIPTION_TABLE_FILE_2 "../test_read_subscription_table_2.txt"
+#define SUBSCRIPTION_TABLE_FILE_3 "../test_read_subscription_table_3.txt"
 
 struct receiver_params {
     uint16_t port_id;
@@ -295,32 +298,55 @@ int main(int argc, char **argv) {
     }
 
 
-    f = fopen(GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE, "r");
+    f = fopen(NEIGHBOR_TABLE_FILE, "r");
     if (f == NULL) {
-        DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE);
+        DEBUG("Cannot find file %s, skip.", NEIGHBOR_TABLE_FILE);
     } else {
         gps_i_neighbor_table_read(forwarder_c->neighbor_table, f);
         fclose(f);
     }
     gps_i_neighbor_table_print(forwarder_c->neighbor_table, stdout, "");
 
-    f = fopen(GPS_I_FORWARDER_ROUTING_TABLE_FILE, "r");
+    f = fopen(ROUTING_TABLE_FILE, "r");
     if (f == NULL) {
-        DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_ROUTING_TABLE_FILE);
+        DEBUG("Cannot find file %s, skip.", ROUTING_TABLE_FILE);
     } else {
         gps_i_routing_table_read(forwarder_c->routing_table, f, GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE);
         fclose(f);
     }
     gps_i_routing_table_print(forwarder_c->routing_table, stdout, "");
 
-    f = fopen(GPS_I_FORWARDER_GNRS_CACHE_FILE, "r");
+    f = fopen(GNRS_CACHE_FILE, "r");
     if (f == NULL) {
-        DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_GNRS_CACHE_FILE);
+        DEBUG("Cannot find file %s, skip.", GNRS_CACHE_FILE);
     } else {
         gps_i_gnrs_cache_read(forwarder_c->gnrs_cache, f, GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE);
         fclose(f);
     }
     gps_i_gnrs_cache_print(forwarder_c->gnrs_cache, stdout, "");
+    
+    f = fopen(SUBSCRIPTION_TABLE_FILE_1, "r");
+    if (f == NULL) {
+        DEBUG("Cannot find file %s, skip.", SUBSCRIPTION_TABLE_FILE_1);
+    } else {
+        gps_i_subscription_table_read(forwarder_c->subscription_table, f, GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE);
+        fclose(f);
+    }
+//    f = fopen(SUBSCRIPTION_TABLE_FILE_2, "r");
+//    if (f == NULL) {
+//        DEBUG("Cannot find file %s, skip.", SUBSCRIPTION_TABLE_FILE_2);
+//    } else {
+//        gps_i_subscription_table_read(forwarder_c->subscription_table, f, GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE);
+//        fclose(f);
+//    }
+//    f = fopen(SUBSCRIPTION_TABLE_FILE_3, "r");
+//    if (f == NULL) {
+//        DEBUG("Cannot find file %s, skip.", SUBSCRIPTION_TABLE_FILE_3);
+//    } else {
+//        gps_i_subscription_table_read(forwarder_c->subscription_table, f, GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE);
+//        fclose(f);
+//    }
+    gps_i_subscription_table_print(forwarder_c->subscription_table, stdout, "");
 
 
     //    struct gps_na dst_na, next_hop_na;

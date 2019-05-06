@@ -49,6 +49,9 @@ generate_packets_routing(const struct ether_addr *src, const struct ether_addr *
 struct candidate_buf *
 generate_packets_gnrs(const struct ether_addr *src, const struct ether_addr *dst,
         struct rte_mempool *pkt_pool);
+struct candidate_buf *
+generate_packets_st(const struct ether_addr *src, const struct ether_addr *dst,
+        struct rte_mempool *pkt_pool);
 
 static void
 print_buf(const void *buf, uint32_t size, uint32_t wrap) {
@@ -369,6 +372,132 @@ generate_packets_gnrs(const struct ether_addr *src, const struct ether_addr *dst
     return candidates;
 }
 
+struct candidate_buf *
+generate_packets_st(const struct ether_addr *src, const struct ether_addr *dst,
+        struct rte_mempool *pkt_pool) {
+    const char *cache_file_name = "../test_read_subscription_table_1.txt";
+    const char *delim = "\t ";
+    struct guid_list *head, *tail, *tmp;
+    char *line = NULL, *token, *end;
+    unsigned line_id = 0;
+    long int value;
+    size_t len;
+    ssize_t read;
+    uint32_t count = 0;
+    uint32_t prefix = rte_cpu_to_be_32(0xdeadbeef);
+
+    char dst_guid_buf[GPS_GUID_FMT_SIZE];
+    int ret;
+#ifndef USE_BUILT_IN_RANDOM
+    uint32_t rnd;
+    struct rte_mbuf *pkt;
+#endif
+
+    head = rte_zmalloc_socket(NULL, sizeof (struct guid_list), 0, pkt_pool->socket_id);
+    if (head == NULL) FAIL("Cannot malloc head");
+    tail = head;
+
+    FILE *f = fopen(cache_file_name, "r");
+    if (f == NULL) FAIL("Cannot open file %s.", cache_file_name);
+
+    while ((read = getline(&line, &len, f)) != -1) {
+        line_id++;
+        if (line[read - 1] == '\n') line[--read] = '\0';
+        if (line[read - 1] == '\r') line[--read] = '\0';
+        DEBUG("getline %u read=%zu, len=%zu", line_id, read, len);
+        DEBUG("line=\"%s\"", line);
+
+        token = strtok(line, delim);
+
+        if (token == NULL) {
+            DEBUG("Cannot read line %u, cannot find dst_guid, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            DEBUG("Cannot read line %u, dst_guid not pure number, skip.", line_id);
+            continue;
+        }
+
+        tmp = rte_zmalloc_socket(NULL, sizeof (struct guid_list), 0, pkt_pool->socket_id);
+        if (tmp == NULL) FAIL("Cannot malloc tmp");
+        tail->next = tmp;
+        tail = tmp;
+
+        gps_guid_set(&tmp->guid, (uint32_t) value);
+        memcpy(&tmp->guid, &prefix, sizeof (uint32_t));
+
+        DEBUG("DST_GUID=%s", gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), &tmp->guid));
+        count++;
+    }
+    free(line);
+    fclose(f);
+
+    DEBUG("Count=%" PRIu32, count);
+
+
+    struct candidate_buf *candidates = rte_malloc_socket("candidates",
+            sizeof (struct candidate_buf) +count * sizeof (struct rte_mbuf *),
+            0,
+            pkt_pool->socket_id);
+    if (candidates == NULL)
+        FAIL("Cannot candidate_buf ret, reason: %s", rte_strerror(rte_errno));
+    candidates->size = count;
+
+    struct ether_hdr *eth_hdr;
+    struct gps_pkt_publication *pub_hdr;
+    struct gps_guid src_guid;
+    struct gps_na src_na, dst_na;
+    uint32_t payload_size;
+
+    ret = rte_pktmbuf_alloc_bulk(pkt_pool, candidates->pkts, candidates->size);
+    if (ret != 0) FAIL("Alloc bulk failed, ret=%d", ret);
+
+    count = 0;
+    for (tmp = head->next; tmp != NULL; tmp = tmp->next) {
+        eth_hdr = (struct ether_hdr*) rte_pktmbuf_append(candidates->pkts[count], sizeof (struct ether_hdr));
+        ether_addr_copy(src, &eth_hdr->s_addr);
+        ether_addr_copy(dst, &eth_hdr->d_addr);
+        eth_hdr->ether_type = rte_cpu_to_be_16(GPS_PROTO_TYPE_ETHER);
+
+        pub_hdr = (struct gps_pkt_publication *) rte_pktmbuf_append(candidates->pkts[count], sizeof (struct gps_pkt_publication));
+        payload_size = PKT_SIZE - rte_pktmbuf_data_len(candidates->pkts[count]);
+
+        gps_pkt_publication_init(pub_hdr,
+                gps_guid_set(&src_guid, 0x89abcdef),
+                &tmp->guid,
+                gps_na_set(&src_na, 0x1234),
+                gps_na_set(&dst_na, 0x1234),
+                payload_size);
+        rte_pktmbuf_append(candidates->pkts[count], payload_size);
+        //        print_buf(rte_pktmbuf_mtod(candidates->pkts[count], void *), rte_pktmbuf_data_len(candidates->pkts[count]), 16);
+        count++;
+    }
+    DEBUG("Count=%" PRIu32, count);
+
+#ifndef USE_BUILT_IN_RANDOM
+    for (count = 0; count < candidates->size; count++) {
+        rnd = ((uint32_t) lrand48()) % candidates->size;
+        pkt = candidates->pkts[rnd];
+        candidates->pkts[rnd] = candidates->pkts[count];
+        candidates->pkts[count] = pkt;
+    }
+#endif
+
+    count = 0;
+    tmp = head-> next;
+    for (;;) {
+        rte_free(head);
+        count++;
+        head = tmp;
+        if (head == NULL) break;
+        tmp = tmp->next;
+    }
+    DEBUG("Count=%" PRIu32, count);
+
+    return candidates;
+}
+
 struct generator_param {
     struct candidate_buf *candidates;
     struct rte_mempool *packet_pool;
@@ -505,7 +634,11 @@ int main(int argc, char **argv) {
 
     cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:91:96", &src, sizeof (src));
     cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c6", &dst, sizeof (dst));
-    candidates = generate_packets_gnrs(&src, &dst, pkt_pool);
+    //    candidates = generate_packets_routing(&src, &dst, pkt_pool);
+    //    candidates = generate_packets_gnrs(&src, &dst, pkt_pool);
+    //    candidates = generate_packets_single(&src, &dst, pkt_pool);
+    candidates = generate_packets_st(&src, &dst, pkt_pool);
+
 
     lcore = rte_lcore_count();
     params = rte_zmalloc_socket("params", sizeof (struct generator_param) * lcore, 0, rte_socket_id());

@@ -43,7 +43,7 @@ extern "C" {
 #define GPS_I_FORWARDER_GNRS_CACHE_SIZE 2047
 #define GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE 4096
 #define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_SIZE 2047
-#define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRY_SIZE 4096
+#define GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE 2048
 #define GPS_I_FORWARDER_PKT_MBUF_SIZE 16384
 #define GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define GPS_I_FORWARDER_INCOMING_RING_SIZE 1024
@@ -124,7 +124,7 @@ extern "C" {
 
         forwarder->subscription_table = gps_i_subscription_table_create(name,
                 GPS_I_FORWARDER_SUBSCRIPTION_TABLE_SIZE,
-                GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRY_SIZE,
+                GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE,
                 socket_id);
         if (unlikely(forwarder->subscription_table == NULL)) {
             DEBUG("fail to create subscription table, reason: %s", rte_strerror(rte_errno));

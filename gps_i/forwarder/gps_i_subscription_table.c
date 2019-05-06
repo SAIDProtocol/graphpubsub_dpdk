@@ -346,3 +346,71 @@ gps_i_subscription_table_print(struct gps_i_subscription_table *table,
     }
     fprintf(stream, ">>>>>>>>>>\n");
 }
+
+void
+gps_i_subscription_table_read(struct gps_i_subscription_table *table,
+        FILE *input, unsigned values_to_free) {
+    const char *delim = "\t ";
+
+    char *line = NULL, *token, *end;
+    size_t len = 0;
+    ssize_t read;
+    unsigned line_id = 0, count = 0;
+    long int value;
+    struct gps_guid group_guid;
+    struct gps_na next_hop_na;
+    int32_t ret;
+    uint32_t prefix = rte_cpu_to_be_32(0xbeefdead);
+
+#ifdef GPS_I_SUBSCRIPTION_TABLE_DEBUG
+    char group_guid_buf[GPS_GUID_FMT_SIZE], next_hop_na_buf[GPS_NA_FMT_SIZE];
+#endif
+
+    DEBUG("table=%p, input=%p", table, input);
+
+    while ((read = getline(&line, &len, input)) != -1) {
+        line_id++;
+        if (line[read - 1] == '\n') line[--read] = '\0';
+        if (line[read - 1] == '\r') line[--read] = '\0';
+        DEBUG("getline %u read=%zu, len=%zu", line_id, read, len);
+        DEBUG("line=\"%s\"", line);
+
+        token = strtok(line, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find group guid, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, group guid not pure number, skip.", line_id);
+            continue;
+        }
+        gps_guid_set(&group_guid, (uint32_t) value);
+        rte_memcpy(&group_guid, &prefix, sizeof (uint32_t));
+        DEBUG("guid=%s", gps_guid_format(group_guid_buf, sizeof (group_guid_buf), &group_guid));
+
+        token = strtok(NULL, delim);
+        if (token == NULL) {
+            INFO("Cannot read line %u, cannot find next_hop_na, skip.", line_id);
+            continue;
+        }
+        value = strtol(token, &end, 0);
+        if (*end != '\0') {
+            INFO("Cannot read line %u, next_hop_na not pure number, skip.", line_id);
+            continue;
+        }
+        gps_na_set(&next_hop_na, (uint32_t) value);
+        DEBUG("na=%s", gps_na_format(next_hop_na_buf, sizeof (next_hop_na_buf), &next_hop_na));
+
+        ret = gps_i_subscription_table_set(table, &group_guid, &next_hop_na);
+        if (ret < 0) {
+            INFO("Cannot add to table, ret=%" PRIi32, ret);
+        }
+        count++;
+        if (count == values_to_free)
+            gps_i_subscription_table_cleanup(table);
+
+    }
+    free(line);
+    gps_i_subscription_table_cleanup(table);
+}

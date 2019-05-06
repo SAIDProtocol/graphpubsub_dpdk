@@ -172,6 +172,17 @@ extern "C" {
     gps_i_subscription_table_print(struct gps_i_subscription_table *table,
             FILE *stream, const char *fmt, ...);
 
+    /**
+     * Reads a file into subscription table.
+     * 
+     * @param table The target subscription table.
+     * @param input The input file.
+     */
+    void
+    gps_i_subscription_table_read(struct gps_i_subscription_table *table, 
+            FILE *input, unsigned values_to_free);
+
+
 #ifdef __cplusplus
 }
 #endif

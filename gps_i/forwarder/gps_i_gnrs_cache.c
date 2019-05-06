@@ -309,7 +309,7 @@ gps_i_gnrs_cache_read(struct gps_i_gnrs_cache *cache, FILE *input, unsigned valu
             continue;
         }
         gps_guid_set(&dst_guid, (uint32_t) value);
-        memcpy(&dst_guid, &prefix, sizeof (uint32_t));
+        rte_memcpy(&dst_guid, &prefix, sizeof (uint32_t));
         DEBUG("guid=%s", gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), &dst_guid));
 
         token = strtok(NULL, delim);

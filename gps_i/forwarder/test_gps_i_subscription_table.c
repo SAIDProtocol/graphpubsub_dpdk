@@ -321,9 +321,39 @@ test_subscription_table_basic_1(void) {
 
 }
 
+static void
+test_subscription_table_read_inner(struct gps_i_subscription_table *table,
+        const char *file_name) {
+
+    FILE *f = fopen(file_name, "r");
+    if (f == NULL) FAIL("Cannot open file: %s\n", file_name);
+    gps_i_subscription_table_read(table, f, 1024);
+    fclose(f);
+}
+
+static void
+test_subscription_table_read(void) {
+    DEBUG_HEAD();
+    const char *file_name_1 = "../test_read_subscription_table_1.txt";
+    const char *file_name_2 = "../test_read_subscription_table_2.txt";
+
+    struct gps_i_subscription_table *table;
+    table = gps_i_subscription_table_create("basic 1", 1023, 1024, rte_socket_id());
+
+    test_subscription_table_read_inner(table, file_name_1);
+    gps_i_subscription_table_print(table, stdout, "TEST_SUBSCRIPTION_TABLE: [%s():%d] after set", __FUNCTION__, __LINE__);
+
+    test_subscription_table_read_inner(table, file_name_2);
+    gps_i_subscription_table_print(table, stdout, "TEST_SUBSCRIPTION_TABLE: [%s():%d] after set", __FUNCTION__, __LINE__);
+
+    gps_i_subscription_table_destroy(table);
+}
+
 void
 test_subscription_table(void) {
     dump_mem("dmp_test_subscription_table_0.txt");
     test_subscription_table_basic_1();
     dump_mem("dmp_test_subscription_table_1.txt");
+    test_subscription_table_read();
+    dump_mem("dmp_test_subscription_table_2.txt");
 }

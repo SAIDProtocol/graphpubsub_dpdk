@@ -209,8 +209,10 @@ gps_i_routing_table_set(struct gps_i_routing_table * table,
         if (i == entry->count) { // Cannot find next_hop_na, need add an element
             DEBUG("Cannot find next_hop_na, need add an element");
             new_entry = __gps_i_routing_table_malloc_entry(table->socket_id, entry->count + 1);
-            rte_memcpy(new_entry, entry, __gps_i_routing_table_get_entry_size(entry->count));
-            new_entry->count++;
+//            rte_memcpy(new_entry, entry, __gps_i_routing_table_get_entry_size(entry->count));
+//            new_entry->count++;
+            rte_memcpy(new_entry->elements, entry->elements, sizeof (struct gps_i_routing_element) * entry->count);
+            new_entry->count = entry->count + 1;
             gps_na_copy(&new_entry->elements[i].next_hop, next_hop_na);
             new_entry->elements[i].distance = distance;
             __gps_i_routing_table_find_minimal(new_entry);

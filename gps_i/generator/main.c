@@ -119,7 +119,7 @@ struct na_list {
 struct candidate_buf *
 generate_packets_routing(const struct ether_addr *src, const struct ether_addr *dst,
         struct rte_mempool *pkt_pool) {
-    const char *routing_file = "../forwarder/test_read_routing_table.txt";
+    const char *routing_file = "../test_read_routing_table.txt";
     const char *delim = "\t ";
     struct na_list *head, *tail, *tmp;
     char *line = NULL, *token, *end;
@@ -246,7 +246,7 @@ struct guid_list {
 struct candidate_buf *
 generate_packets_gnrs(const struct ether_addr *src, const struct ether_addr *dst,
         struct rte_mempool *pkt_pool) {
-    const char *cache_file_name = "../forwarder/test_read_gnrs_cache.txt";
+    const char *cache_file_name = "../test_read_gnrs_cache.txt";
     const char *delim = "\t ";
     struct guid_list *head, *tail, *tmp;
     char *line = NULL, *token, *end;

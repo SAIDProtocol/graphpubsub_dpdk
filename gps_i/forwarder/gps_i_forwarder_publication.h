@@ -9,6 +9,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#define GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE 0
+#define GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE 1
+#define GPS_I_FORWARDER_PUBLICATION_ACTION_COPY 2
+
+#define GPS_I_FORWARDER_PUBLICATION_ACTION GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
 
 #include "gps_i_forwarder_common.h"
 
@@ -88,10 +93,66 @@ extern "C" {
     static __rte_always_inline void
     gps_i_forwarder_handle_publication_downstream(struct gps_i_forwarder_process_lcore *lcore,
             struct rte_mbuf *pkt, struct gps_pkt_publication *publication) {
-        RTE_SET_USED(lcore);
-        RTE_SET_USED(pkt);
-        RTE_SET_USED(publication);
+        const struct gps_guid *dst_guid;
+        const struct gps_i_subscription_entry *entry;
+        struct gps_i_anno *anno;
+        uint32_t i;
+#ifdef GPS_I_FORWARDER_PUBLICATION_DEBUG
+        char dst_guid_buf[GPS_GUID_FMT_SIZE], na_buf[GPS_NA_FMT_SIZE];
+#endif
+
         DEBUG("Publication downstream!");
+        dst_guid = gps_pkt_publication_get_dst_guid(publication);
+        DEBUG("dst_guid=%s", gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), dst_guid));
+
+        entry = gps_i_subscription_table_lookup(lcore->forwarder->subscription_table, dst_guid);
+
+        if (entry == NULL) {
+            DEBUG("Lookup guid found nothing, free publication packet: %p", pkt);
+            rte_pktmbuf_free(pkt);
+            return;
+        }
+
+#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
+        struct rte_mbuf *created;
+        char *data;
+        rte_pktmbuf_linearize(pkt);
+        for (i = 0; i < entry->count - 1; i++) {
+            created = rte_pktmbuf_alloc(lcore->forwarder->pkt_pool);
+            if (created == NULL) {
+                DEBUG("Cannot allocate a new packet!");
+                break;
+            }
+            DEBUG("created=%p", created);
+            created->port = pkt->port;
+            created->vlan_tci = pkt->vlan_tci;
+            created->vlan_tci_outer = pkt->vlan_tci_outer;
+            created->tx_offload = pkt->tx_offload;
+            created->hash = pkt->hash;
+            data = rte_pktmbuf_append(created, rte_pktmbuf_data_len(pkt));
+            DEBUG("data=%p", data);
+            rte_memcpy(data, publication, rte_pktmbuf_data_len(pkt));
+            anno = rte_mbuf_to_priv(created);
+            gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
+            DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
+            gps_i_forwarder_encapsulate(lcore, created);
+        }
+        // handle the last packet, use pkt itself.
+        anno = rte_mbuf_to_priv(pkt);
+        gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
+        DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
+        gps_i_forwarder_encapsulate(lcore, pkt);
+
+#elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE
+        for (i = 0; i < entry->count - 1; i++) {
+
+        }
+#elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+
+#else
+#error "Need to specify a correct GPS_I_FORWARDER_PUBLICATION_ACTION"
+#endif
+
         DEBUG("Free publication packet: %p", pkt);
     }
 
@@ -149,6 +210,7 @@ extern "C" {
         RTE_SET_USED(lcore);
         RTE_SET_USED(pkt);
         DEBUG("control handle publication, free pkt: %p", pkt);
+        rte_pktmbuf_free(pkt);
     }
 
 #undef _DEBUG

@@ -32,9 +32,10 @@ void print_buf(const void *buf, uint32_t size, uint32_t wrap);
 void dump_mem(const char *file_name);
 void test_forwarder_logic(void);
 
-typedef void (test_forwarder_logic_generator_t) (struct rte_mempool *, struct rte_ring *, struct gps_i_forwarder_control_plane *);
-void generator_decapsulation(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder);
-void generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder);
+typedef void (test_forwarder_logic_generator_t) (struct rte_ring *, struct gps_i_forwarder_control_plane *);
+void generator_decapsulation(struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder);
+void generator_publication_upstream(struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder);
+void generator_publication_downstream(struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder);
 
 #define TEST_OUTGOING_RING_SIZE 3
 #define TEST_BURST_SIZE 64
@@ -96,9 +97,6 @@ destroy_outgoing_rings(struct rte_ring *outgoing_rings[],
     DEBUG("free outgoing_rings=%p", outgoing_rings);
     rte_free(outgoing_rings);
 }
-
-
-
 
 volatile bool running = false;
 
@@ -239,7 +237,7 @@ test_logic_master(const char *name, test_forwarder_logic_generator_t *generator)
 
     rte_delay_ms(100);
 
-    generator(forwarder_c->pkt_pool, process_lcore->incoming_ring, forwarder_c);
+    generator(process_lcore->incoming_ring, forwarder_c);
     //
     rte_delay_ms(100);
     running = false;
@@ -263,10 +261,11 @@ test_logic_master(const char *name, test_forwarder_logic_generator_t *generator)
 }
 
 void
-generator_decapsulation(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder __rte_unused) {
+generator_decapsulation(struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder) {
     struct rte_mbuf *pkt;
     struct ether_hdr *eth_hdr;
     struct ipv4_hdr *ip_hdr;
+    struct rte_mempool *pkt_pool = forwarder->pkt_pool;
 
     DEBUG(">>>> packet too small for Ether");
     pkt = rte_pktmbuf_alloc(pkt_pool);
@@ -414,7 +413,7 @@ create_correct_ether_pkt(struct rte_mempool *pkt_pool) {
 }
 
 void
-generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder) {
+generator_publication_upstream(struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane * forwarder) {
     struct rte_mbuf *pkt;
     char *gps_hdr;
     struct gps_na na, next_hop_na;
@@ -422,6 +421,7 @@ generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *pr
     struct gps_i_neighbor_info *info, *ret_info;
     int32_t ret;
     uint32_t distance;
+    struct rte_mempool *pkt_pool = forwarder->pkt_pool;
 
     char na_buf[GPS_NA_FMT_SIZE], next_hop_na_buf[GPS_NA_FMT_SIZE], guid_buf[GPS_GUID_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
 
@@ -479,7 +479,7 @@ generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *pr
     info->port = 1;
     ret_info = gps_i_neighbor_table_set(forwarder->neighbor_table, gps_na_set(&na, 0x23456), info);
     DEBUG("neighbor table set %s -> %s, ret=%p", gps_na_format(na_buf, sizeof (na_buf), &na), gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info), ret_info);
-    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", info);
+    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", ret_info);
 
     info = gps_i_neighbor_table_get_entry(forwarder->neighbor_table);
     DEBUG("neighbor table get entry=%p", info);
@@ -490,7 +490,7 @@ generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *pr
     info->port = 2;
     ret_info = gps_i_neighbor_table_set(forwarder->neighbor_table, gps_na_set(&na, 0x24567), info);
     DEBUG("neighbor table set %s -> %s, ret=%p", gps_na_format(na_buf, sizeof (na_buf), &na), gps_i_neighbor_info_format(info_buf, sizeof (info_buf), info), ret_info);
-    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", info);
+    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", ret_info);
     gps_i_neighbor_table_print(forwarder->neighbor_table, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] routing table", __func__, __LINE__);
 
     printf("\n");
@@ -683,10 +683,109 @@ generator_publication_upstream(struct rte_mempool *pkt_pool, struct rte_ring *pr
 }
 
 void
+generator_publication_downstream(struct rte_ring *processor_ring, struct gps_i_forwarder_control_plane *forwarder) {
+    struct rte_mbuf *pkt;
+    char *gps_hdr;
+    struct gps_na na;
+    struct gps_guid guid;
+    struct gps_i_neighbor_info *neighbor_info, *ret_info;
+    int32_t ret;
+    struct rte_mempool *pkt_pool = forwarder->pkt_pool;
+
+    char na_buf[GPS_NA_FMT_SIZE], guid_buf[GPS_GUID_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+
+    ret = gps_i_subscription_table_set(forwarder->subscription_table,
+            gps_guid_set(&guid, 0x12345678),
+            gps_na_set(&na, 0x12345));
+    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set subscription table");
+    ret = gps_i_subscription_table_set(forwarder->subscription_table,
+            gps_guid_set(&guid, 0x23456789),
+            gps_na_set(&na, 0x12345));
+    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set subscription table");
+    ret = gps_i_subscription_table_set(forwarder->subscription_table,
+            gps_guid_set(&guid, 0x23456789),
+            gps_na_set(&na, 0x23456));
+    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set subscription table");
+    ret = gps_i_subscription_table_set(forwarder->subscription_table,
+            gps_guid_set(&guid, 0x23456789),
+            gps_na_set(&na, 0x34567));
+    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set subscription table");
+    gps_i_subscription_table_print(forwarder->subscription_table, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] after set", __func__, __LINE__);
+
+    neighbor_info = gps_i_neighbor_table_get_entry(forwarder->neighbor_table);
+    DEBUG("neighbor table get entry=%p", neighbor_info);
+    if (neighbor_info == NULL) FAIL("Cannot get entry from neighbor table");
+    cmdline_parse_etheraddr(NULL, "aa:bb:cc:dd:ee:ff", &neighbor_info->ether, sizeof (neighbor_info->ether));
+    neighbor_info->use_ip = false;
+    neighbor_info->port = 0;
+    ret_info = gps_i_neighbor_table_set(forwarder->neighbor_table, gps_na_set(&na, 0x12345), neighbor_info);
+    DEBUG("neighbor table set %s -> %s, ret=%p", gps_na_format(na_buf, sizeof (na_buf), &na), gps_i_neighbor_info_format(info_buf, sizeof (info_buf), neighbor_info), ret_info);
+    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", ret_info);
+    neighbor_info = gps_i_neighbor_table_get_entry(forwarder->neighbor_table);
+    DEBUG("neighbor table get entry=%p", neighbor_info);
+    if (neighbor_info == NULL) FAIL("Cannot get entry from neighbor table");
+    cmdline_parse_etheraddr(NULL, "bb:cc:dd:ee:ff:00", &neighbor_info->ether, sizeof (neighbor_info->ether));
+    neighbor_info->use_ip = false;
+    neighbor_info->port = 1;
+    ret_info = gps_i_neighbor_table_set(forwarder->neighbor_table, gps_na_set(&na, 0x23456), neighbor_info);
+    DEBUG("neighbor table set %s -> %s, ret=%p", gps_na_format(na_buf, sizeof (na_buf), &na), gps_i_neighbor_info_format(info_buf, sizeof (info_buf), neighbor_info), ret_info);
+    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", ret_info);
+    neighbor_info = gps_i_neighbor_table_get_entry(forwarder->neighbor_table);
+    DEBUG("neighbor table get entry=%p", neighbor_info);
+    if (neighbor_info == NULL) FAIL("Cannot get entry from neighbor table");
+    cmdline_parse_etheraddr(NULL, "cc:dd:ee:ff:00:11", &neighbor_info->ether, sizeof (neighbor_info->ether));
+    neighbor_info->use_ip = false;
+    neighbor_info->port = 2;
+    ret_info = gps_i_neighbor_table_set(forwarder->neighbor_table, gps_na_set(&na, 0x34567), neighbor_info);
+    DEBUG("neighbor table set %s -> %s, ret=%p", gps_na_format(na_buf, sizeof (na_buf), &na), gps_i_neighbor_info_format(info_buf, sizeof (info_buf), neighbor_info), ret_info);
+    if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", ret_info);
+    gps_i_neighbor_table_print(forwarder->neighbor_table, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] routing table", __func__, __LINE__);
+
+    printf("\n");
+
+
+    DEBUG(">>>> publication downstream 1 next hop");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0xdead); // downstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x12345678); // 1 next hop
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+
+    DEBUG(">>>> publication downstream 3 next hops");
+    pkt = create_correct_ether_pkt(pkt_pool);
+    gps_hdr = rte_pktmbuf_append(pkt, sizeof (struct gps_pkt_publication));
+    DEBUG("gps_hdr=%p, pkt_start=%p", gps_hdr, rte_pktmbuf_mtod(pkt, void *));
+    if (unlikely(gps_hdr == NULL)) FAIL("Cannot get gps_hdr, reason: %s", rte_strerror(rte_errno));
+    gps_pkt_set_type(gps_hdr, GPS_PKT_TYPE_PUBLICATION);
+    gps_pkt_publication_set_size(gps_hdr, 0);
+    gps_na_set(gps_pkt_publication_get_src_na(gps_hdr), 0xdead); // downstream
+    gps_na_set(gps_pkt_publication_get_dst_na(gps_hdr), 0); // first hop
+    gps_guid_set(gps_pkt_publication_get_dst_guid(gps_hdr), 0x23456789); // 3 next hops
+    print_buf(rte_pktmbuf_mtod(pkt, void *), rte_pktmbuf_data_len(pkt), 16);
+    rte_ring_enqueue(processor_ring, pkt);
+
+    rte_delay_ms(20);
+}
+
+void
 test_forwarder_logic(void) {
     dump_mem("dmp_test_forwarder_logic_0.txt");
-    //    test_logic_master("decap", generator_decapsulation);
-    //    dump_mem("dmp_test_forwarder_logic_1.txt");
-    test_logic_master("decap", generator_publication_upstream);
-    dump_mem("dmp_test_forwarder_logic_2.txt");
+//    test_logic_master("decap", generator_decapsulation);
+//    dump_mem("dmp_test_forwarder_logic_1.txt");
+//    test_logic_master("decap", generator_publication_upstream);
+//    dump_mem("dmp_test_forwarder_logic_2.txt");
+    test_logic_master("decap", generator_publication_downstream);
+    dump_mem("dmp_test_forwarder_logic_3.txt");
 }

@@ -12,7 +12,7 @@
 #define RTE_LOGTYPE_SUBSCRIPTION_TABLE RTE_LOGTYPE_USER1
 #include <rte_log.h>
 
-#define GPS_I_SUBSCRIPTION_TABLE_DEBUG
+//#define GPS_I_SUBSCRIPTION_TABLE_DEBUG
 
 #ifdef GPS_I_SUBSCRIPTION_TABLE_DEBUG
 #define DEBUG(...) _DEBUG(__VA_ARGS__, "dummy")
@@ -167,8 +167,8 @@ gps_i_subscription_table_set(struct gps_i_subscription_table * table,
         if (i == entry->count) {
             DEBUG("Cannot find next_hop_na, need add an element");
             new_entry = __gps_i_subscription_table_malloc_entry(table->socket_id, entry->count + 1);
-            rte_memcpy(new_entry, entry, __gps_i_subscription_table_get_entry_size(entry->count));
-            new_entry->count++;
+            rte_memcpy(new_entry->next_hops, entry->next_hops, sizeof (struct gps_na) * entry->count);
+            new_entry->count = entry->count + 1;
             gps_na_copy(&new_entry->next_hops[i], next_hop_na);
 
             ret = rte_hash_add_key_data_x(table->keys, dst_guid, new_entry, (void **) &orig_entry);

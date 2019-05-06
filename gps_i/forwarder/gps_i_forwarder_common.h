@@ -11,6 +11,7 @@
 #include "gps_i_gnrs_cache.h"
 #include "gps_i_neighbor_table.h"
 #include "gps_i_routing_table.h"
+#include "gps_i_subscription_table.h"
 #include <rte_branch_prediction.h>
 #include <rte_mbuf.h>
 #include <rte_malloc.h>
@@ -46,15 +47,12 @@ extern "C" {
 #define GPS_I_FORWARDER_PKT_MBUF_SIZE 16384
 #define GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define GPS_I_FORWARDER_INCOMING_RING_SIZE 1024
-#define GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE "test_read_neighbor_table.txt"
-#define GPS_I_FORWARDER_ROUTING_TABLE_FILE "test_read_routing_table.txt"
-#define GPS_I_FORWARDER_GNRS_CACHE_FILE "test_read_gnrs_cache.txt"
 
     struct gps_i_forwarder_control_plane {
         struct gps_i_neighbor_table *neighbor_table;
         struct gps_i_routing_table *routing_table;
         struct gps_i_gnrs_cache *gnrs_cache;
-        // subscription table
+        struct gps_i_subscription_table *subscription_table;
         // rp
         struct gps_na my_na;
         struct gps_i_neighbor_info *my_encap_info; // one info for each outgoing port
@@ -68,7 +66,7 @@ extern "C" {
         const struct gps_i_neighbor_table *neighbor_table;
         const struct gps_i_routing_table *routing_table;
         const struct gps_i_gnrs_cache *gnrs_cache;
-        // subscription table
+        const struct gps_i_subscription_table *subscription_table;
         // rp
         const struct gps_na my_na;
         const struct gps_i_neighbor_info *my_encap_info;
@@ -81,7 +79,6 @@ extern "C" {
 
         char tmp_name[RTE_MEMZONE_NAMESIZE];
         struct gps_i_forwarder_control_plane *forwarder;
-        FILE *f;
 #ifdef  GPS_I_FORWARDER_COMMON_DEBUG
         char na_buf[GPS_NA_FMT_SIZE];
 #endif
@@ -105,15 +102,6 @@ extern "C" {
         }
         DEBUG("neighbor_table=%p", forwarder->neighbor_table);
 
-        f = fopen(GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE, "r");
-        if (f == NULL) {
-            DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE);
-        } else {
-            gps_i_neighbor_table_read(forwarder->neighbor_table, f);
-            fclose(f);
-        }
-        gps_i_neighbor_table_print(forwarder->neighbor_table, stdout, "");
-
         forwarder->routing_table = gps_i_routing_table_create(name,
                 GPS_I_FORWARDER_ROUTING_TABLE_SIZE,
                 GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE,
@@ -123,15 +111,6 @@ extern "C" {
             goto fail;
         }
         DEBUG("routing_table=%p", forwarder->routing_table);
-
-        f = fopen(GPS_I_FORWARDER_ROUTING_TABLE_FILE, "r");
-        if (f == NULL) {
-            DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_ROUTING_TABLE_FILE);
-        } else {
-            gps_i_routing_table_read(forwarder->routing_table, f, GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE);
-            fclose(f);
-        }
-        gps_i_routing_table_print(forwarder->routing_table, stdout, "");
 
         forwarder->gnrs_cache = gps_i_gnrs_cache_create(name,
                 GPS_I_FORWARDER_GNRS_CACHE_SIZE,
@@ -143,16 +122,17 @@ extern "C" {
         }
         DEBUG("gnrs_cache=%p", forwarder->gnrs_cache);
 
-        f = fopen(GPS_I_FORWARDER_GNRS_CACHE_FILE, "r");
-        if (f == NULL) {
-            DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_GNRS_CACHE_FILE);
-        } else {
-            gps_i_gnrs_cache_read(forwarder->gnrs_cache, f, GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE);
-            fclose(f);
+        forwarder->subscription_table = gps_i_subscription_table_create(name,
+                GPS_I_FORWARDER_SUBSCRIPTION_TABLE_SIZE,
+                GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRY_SIZE,
+                socket_id);
+        if (unlikely(forwarder->subscription_table == NULL)) {
+            DEBUG("fail to create subscription table, reason: %s", rte_strerror(rte_errno));
+            goto fail;
         }
-        gps_i_gnrs_cache_print(forwarder->gnrs_cache, stdout, "");
+        DEBUG("subscription_table=%p", forwarder->subscription_table);
 
-        // subscription table
+
         // rp
         // gnrs_pending_table
 
@@ -191,7 +171,10 @@ fail:
                 gps_i_gnrs_cache_destroy(forwarder->gnrs_cache);
             }
 
-            // subscription table
+            if (forwarder->subscription_table != NULL) {
+                DEBUG("destroy subscription_table=%p", forwarder->subscription_table);
+                gps_i_subscription_table_destroy(forwarder->subscription_table);
+            }
             // rp
             // gnrs_pending_table
 
@@ -222,7 +205,8 @@ fail:
         DEBUG("destroy gnrs_cache=%p", forwarder->gnrs_cache);
         gps_i_gnrs_cache_destroy(forwarder->gnrs_cache);
 
-        // subscription table
+        DEBUG("destroy subscription_table=%p", forwarder->subscription_table);
+        gps_i_subscription_table_destroy(forwarder->subscription_table);
         // rp
         // gnrs_pending_table
 
@@ -239,8 +223,7 @@ fail:
         gps_i_neighbor_table_cleanup(forwarder->neighbor_table);
         gps_i_routing_table_cleanup(forwarder->routing_table);
         gps_i_gnrs_cache_cleanup(forwarder->gnrs_cache);
-
-        // subscription table
+        gps_i_subscription_table_cleanup(forwarder->subscription_table);
         // rp
 
         // gnrs_pending_table doesn't need RCU, no cleanup needed.

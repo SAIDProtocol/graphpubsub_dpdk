@@ -38,6 +38,9 @@
 #define DEFAULT_BURST_SIZE 64
 #define PREFETCH_OFFSET 3
 #define BURST_TX_DRAIN_US 100
+#define GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE "../test_read_neighbor_table.txt"
+#define GPS_I_FORWARDER_ROUTING_TABLE_FILE "../test_read_routing_table.txt"
+#define GPS_I_FORWARDER_GNRS_CACHE_FILE "../test_read_gnrs_cache.txt"
 
 struct receiver_params {
     uint16_t port_id;
@@ -221,6 +224,7 @@ int main(int argc, char **argv) {
     struct gps_i_forwarder_control_lcore *control_lcore;
     struct sender_params *sender_params;
     struct receiver_params *receiver_params;
+    FILE *f;
 
     char info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
     char tmp_name[RTE_MEMZONE_NAMESIZE];
@@ -290,17 +294,46 @@ int main(int argc, char **argv) {
         enable_port(port, 1, forwarder_c->pkt_pool);
     }
 
-//    struct gps_na dst_na, next_hop_na;
-//    gps_i_routing_table_set(forwarder_c->routing_table,
-//            gps_na_set(&dst_na, 0x14567),
-//            gps_na_set(&next_hop_na, 0x24567),
-//            1);
-//    gps_i_routing_table_print(forwarder_c->routing_table, stdout, "MAIN: [%s():%d] routing table", __func__, __LINE__);
-//    struct gps_i_neighbor_info * neighbor =
-//            gps_i_neighbor_table_get_entry(forwarder_c->neighbor_table);
-//    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c2", &neighbor->ether, sizeof (neighbor->ether));
-//    gps_i_neighbor_table_set(forwarder_c->neighbor_table, &next_hop_na, neighbor);
-//    gps_i_neighbor_table_print(forwarder_c->neighbor_table, stdout, "MAIN: [%s():%d] neighbor table", __func__, __LINE__);
+
+    f = fopen(GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE, "r");
+    if (f == NULL) {
+        DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_NEIGHBOR_TABLE_FILE);
+    } else {
+        gps_i_neighbor_table_read(forwarder_c->neighbor_table, f);
+        fclose(f);
+    }
+    gps_i_neighbor_table_print(forwarder_c->neighbor_table, stdout, "");
+
+    f = fopen(GPS_I_FORWARDER_ROUTING_TABLE_FILE, "r");
+    if (f == NULL) {
+        DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_ROUTING_TABLE_FILE);
+    } else {
+        gps_i_routing_table_read(forwarder_c->routing_table, f, GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE);
+        fclose(f);
+    }
+    gps_i_routing_table_print(forwarder_c->routing_table, stdout, "");
+
+    f = fopen(GPS_I_FORWARDER_GNRS_CACHE_FILE, "r");
+    if (f == NULL) {
+        DEBUG("Cannot find file %s, skip.", GPS_I_FORWARDER_GNRS_CACHE_FILE);
+    } else {
+        gps_i_gnrs_cache_read(forwarder_c->gnrs_cache, f, GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE);
+        fclose(f);
+    }
+    gps_i_gnrs_cache_print(forwarder_c->gnrs_cache, stdout, "");
+
+
+    //    struct gps_na dst_na, next_hop_na;
+    //    gps_i_routing_table_set(forwarder_c->routing_table,
+    //            gps_na_set(&dst_na, 0x14567),
+    //            gps_na_set(&next_hop_na, 0x24567),
+    //            1);
+    //    gps_i_routing_table_print(forwarder_c->routing_table, stdout, "MAIN: [%s():%d] routing table", __func__, __LINE__);
+    //    struct gps_i_neighbor_info * neighbor =
+    //            gps_i_neighbor_table_get_entry(forwarder_c->neighbor_table);
+    //    cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c2", &neighbor->ether, sizeof (neighbor->ether));
+    //    gps_i_neighbor_table_set(forwarder_c->neighbor_table, &next_hop_na, neighbor);
+    //    gps_i_neighbor_table_print(forwarder_c->neighbor_table, stdout, "MAIN: [%s():%d] neighbor table", __func__, __LINE__);
 
 
     control_lcore = gps_i_forwarder_control_lcore_create("ctrl", forwarder_c, outgoing_rings, port_count, rte_socket_id());

@@ -37,8 +37,13 @@
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define MAX_PKT_BURST 64
 #define PKT_SIZE 64
+#define USE_BUILT_IN_RANDOM
+
+#ifdef USE_BUILT_IN_RANDOM
+#define NUM_PKT_TO_SEND 50000000
+#else
 #define NUM_PKT_TO_SEND 100000000
-//#define USE_BUILT_IN_RANDOM
+#endif
 
 struct candidate_buf *
 generate_packets_single(const struct ether_addr *src, const struct ether_addr *dst,
@@ -384,7 +389,7 @@ generate_packets_st(const struct ether_addr *src, const struct ether_addr *dst,
     size_t len;
     ssize_t read;
     uint32_t count = 0;
-    uint32_t prefix = rte_cpu_to_be_32(0xdeadbeef);
+    uint32_t prefix = rte_cpu_to_be_32(0xbeefdead);
 
     char dst_guid_buf[GPS_GUID_FMT_SIZE];
     int ret;
@@ -425,7 +430,7 @@ generate_packets_st(const struct ether_addr *src, const struct ether_addr *dst,
         tail = tmp;
 
         gps_guid_set(&tmp->guid, (uint32_t) value);
-        memcpy(&tmp->guid, &prefix, sizeof (uint32_t));
+        rte_memcpy(&tmp->guid, &prefix, sizeof (uint32_t));
 
         DEBUG("DST_GUID=%s", gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), &tmp->guid));
         count++;

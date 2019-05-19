@@ -395,6 +395,16 @@ int main(int argc, char **argv) {
         rte_eal_remote_launch(main_loop_receiver, &receiver_params[port], lcore);
     }
 
+#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
+    DEBUG("publication action using copy");
+#elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE
+#error "Not supporte now"
+#elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+    DEBUG("publication action using ref_cnt");
+#else
+#error "Need to specify a correct GPS_I_FORWARDER_PUBLICATION_ACTION"
+#endif
+
     DEBUG("=======================MAIN LOOP=======================");
     main_loop_control(control_lcore);
 

@@ -118,6 +118,19 @@ extern "C" {
     gps_i_neighbor_table_set(struct gps_i_neighbor_table * table,
             const struct gps_na *na, struct gps_i_neighbor_info *info);
 
+    static __rte_always_inline int32_t
+    gps_i_neighbor_table_get_position(const struct gps_i_neighbor_table * table,
+            const struct gps_na *na) {
+        return rte_hash_lookup_x(table->keys, na);
+    }
+
+    static __rte_always_inline void
+    gps_i_neighbor_table_get_entry_at_position(const struct gps_i_neighbor_table *table,
+            int32_t position, const struct gps_na **key,
+            const struct gps_i_neighbor_info **info) {
+        rte_hash_get_key_data_with_position_force_x(table->keys, position, (const void **) key, (const void **) info);
+    }
+
     /**
      * Remove an entry from the neighbor table.
      * 

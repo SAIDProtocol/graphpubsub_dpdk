@@ -13,7 +13,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-//#define GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
+    //#define GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
 
 #ifdef GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
 #include <rte_log.h>
@@ -99,20 +99,14 @@ success:
     }
 
     static __rte_always_inline void
-    gps_i_forwarder_encapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt) {
-        RTE_SET_USED(lcore);
-        struct gps_i_anno *anno;
-        const struct gps_i_neighbor_info *neighbor_info, *local_info;
+    gps_i_forwarder_encapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt, const struct gps_i_neighbor_info *neighbor_info) {
+        const struct gps_i_neighbor_info *local_info;
         struct ether_hdr *eth_hdr;
         struct ipv4_hdr *ip_hdr;
 #ifdef GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
         char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
-#endif
-        anno = rte_mbuf_to_priv(pkt);
-        DEBUG("encapsulate, next_hop_na=%s", gps_na_format(na_buf, sizeof (na_buf), &anno->next_hop_na));
-
-        neighbor_info = gps_i_neighbor_table_lookup(lcore->forwarder->neighbor_table, &anno->next_hop_na);
-        DEBUG("lookup neighbor table neighbor_info=%s [%p]",
+#endif        
+        DEBUG("neighbor_info=%s [%p]",
                 neighbor_info == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), neighbor_info),
                 neighbor_info);
         if (unlikely(neighbor_info == NULL)) {

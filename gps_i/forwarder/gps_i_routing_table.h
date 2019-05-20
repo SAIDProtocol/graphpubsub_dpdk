@@ -7,6 +7,7 @@
 #define GPS_I_ROUTING_TABLE_H
 
 #include <gps_na.h>
+#include "gps_i_neighbor_table.h"
 #include <rte_branch_prediction.h>
 #include <rte_common.h>
 #include "rte_hash.h"
@@ -17,7 +18,9 @@ extern "C" {
 #endif
 
     struct gps_i_routing_element {
-        struct gps_na next_hop;
+        // pointing directly to the location in the neighbor table.
+        // so that we can avoid yet another hash lookup.
+        int32_t position_in_neighbor_table;
         uint32_t distance;
     };
 
@@ -27,16 +30,18 @@ extern "C" {
         struct gps_i_routing_element elements[];
     };
 
-    void
-    gps_i_routing_entry_print(const struct gps_i_routing_entry *entry,
-            FILE *stream, const char *fmt, ...);
-
     struct gps_i_routing_table {
         struct rte_hash_x *keys;
         struct rte_ring *key_positions_to_free;
         struct rte_ring *values_to_free;
         unsigned socket_id;
+        const struct gps_i_neighbor_table *neighbor_table;
     };
+
+    void
+    gps_i_routing_entry_print(const struct gps_i_routing_table *table,
+            const struct gps_i_routing_entry *entry,
+            FILE *stream, const char *fmt, ...);
 
     /**
      * Initiate a routing table with specified number of entries on a socket id.
@@ -58,7 +63,8 @@ extern "C" {
      */
     struct gps_i_routing_table *
     gps_i_routing_table_create(const char *type, uint32_t entries,
-            unsigned values_to_free, unsigned socket_id);
+            unsigned values_to_free, unsigned socket_id,
+            struct gps_i_neighbor_table *neighbor_table);
 
     /**
      * Add an entry into the routing table.
@@ -159,7 +165,7 @@ extern "C" {
      *   - The next hop na with lowest distance.
      *   - NULL if entry not exist.
      */
-    static __rte_always_inline const struct gps_na *
+    static __rte_always_inline const struct gps_i_neighbor_info *
     gps_i_routing_table_get_next_hop(const struct gps_i_routing_table * table,
             const struct gps_na *dst_na, uint32_t *distance) {
         const struct gps_i_routing_entry *value;
@@ -171,7 +177,13 @@ extern "C" {
         elem = value->elements + value->min_idx;
 
         if (unlikely(distance != NULL)) *distance = elem->distance;
-        return &elem->next_hop;
+        const struct gps_na *key;
+        const struct gps_i_neighbor_info *neighbor_entry;
+
+        gps_i_neighbor_table_get_entry_at_position(table->neighbor_table, elem->position_in_neighbor_table, &key, &neighbor_entry);
+
+
+        return neighbor_entry;
     }
 
     /**

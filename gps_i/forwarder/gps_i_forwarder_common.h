@@ -119,7 +119,8 @@ extern "C" {
         forwarder->routing_table = gps_i_routing_table_create(name,
                 GPS_I_FORWARDER_ROUTING_TABLE_SIZE,
                 GPS_I_FORWARDER_ROUTING_TABLE_ENTRYS_TO_FREE,
-                socket_id);
+                socket_id,
+                forwarder->neighbor_table);
         if (unlikely(forwarder->routing_table == NULL)) {
             DEBUG("fail to create routing_table, reason: %s", rte_strerror(rte_errno));
             goto fail;
@@ -473,7 +474,7 @@ fail:
     gps_i_forwarder_decapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt);
 
     static __rte_always_inline void
-    gps_i_forwarder_encapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt);
+    gps_i_forwarder_encapsulate(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt, const struct gps_i_neighbor_info *neighbor_info);
 
     static __rte_always_inline void
     gps_i_forwarder_handle_publication(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt);

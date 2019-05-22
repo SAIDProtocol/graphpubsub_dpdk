@@ -7,6 +7,8 @@
 #define GPS_I_GNRS_CACHE_H
 
 #include <gps_na.h>
+#include "gps_i_neighbor_table.h"
+#include "gps_i_routing_table.h"
 #include <gps_guid.h>
 #include <rte_common.h>
 #include "rte_hash.h"
@@ -20,26 +22,32 @@ extern "C" {
 #endif
 
     struct gps_i_gnrs_cache_entry {
-        struct gps_na na;
+        int32_t position_in_routing_table;
         uint32_t version;
     };
-
-#define GPS_I_GNRS_CACHE_ENTRY_FMT_SIZE (GPS_NA_FMT_SIZE + 22)
-
-    static __rte_always_inline char *
-    gps_i_gnrs_cache_entry_format(char *buf, uint16_t size, const struct gps_i_gnrs_cache_entry *entry) {
-        char na_buf[GPS_NA_FMT_SIZE];
-        snprintf(buf, size, "GNRS{na=%s,v=%" PRIu32 "}",
-                gps_na_format(na_buf, sizeof (na_buf), &entry->na), entry->version);
-        return buf;
-    }
 
     struct gps_i_gnrs_cache {
         struct rte_hash_x *keys;
         struct rte_mempool *values;
         struct rte_ring *key_positions_to_free;
         struct rte_ring *values_to_free;
+        const struct gps_i_routing_table *routing_table;
     };
+
+
+#define GPS_I_GNRS_CACHE_ENTRY_FMT_SIZE (GPS_NA_FMT_SIZE + 22)
+
+    static __rte_always_inline char *
+    gps_i_gnrs_cache_entry_format(struct gps_i_gnrs_cache *cache,
+            char *buf, uint16_t size, const struct gps_i_gnrs_cache_entry *entry) {
+        char na_buf[GPS_NA_FMT_SIZE];
+        const struct gps_na *dst_na;
+        const struct gps_i_routing_entry *routing_entry;
+        gps_i_routing_table_get_entry_at_position(cache->routing_table, entry->position_in_routing_table, &dst_na, &routing_entry);
+        snprintf(buf, size, "GNRS{na=%s,v=%" PRIu32 "}",
+                gps_na_format(na_buf, sizeof (na_buf), dst_na), entry->version);
+        return buf;
+    }
 
     /**
      * Initiate a gnrs cache with specified number of entries on a socket id.
@@ -61,7 +69,8 @@ extern "C" {
      */
     struct gps_i_gnrs_cache *
     gps_i_gnrs_cache_create(const char *type, uint32_t entries,
-            unsigned value_slots, unsigned socket_id);
+            unsigned value_slots, unsigned socket_id,
+            const struct gps_i_routing_table *routing_table);
 
     /**
      * Add an entry into the gnrs cache.
@@ -115,19 +124,29 @@ extern "C" {
      * @param version
      *   Output. The version of the entry. Can be NULL.
      * @return 
-     *   - The na mapped with the guid.
+     *   - The nearest next_hop neighbor info mapped with the guid.
      *   - NULL if entry not exist.
      */
-    static __rte_always_inline const struct gps_na *
+    static __rte_always_inline const struct gps_i_neighbor_info *
     gps_i_gnrs_cache_lookup(const struct gps_i_gnrs_cache * cache,
-            const struct gps_guid *guid, uint32_t *version) {
+            const struct gps_guid *guid, uint32_t *version,
+            const struct gps_na **dst_na) {
         struct gps_i_gnrs_cache_entry *value;
         int ret;
+        const struct gps_na *next_hop_na;
+        const struct gps_i_neighbor_info *neighbor_info;
 
         ret = rte_hash_lookup_data_x(cache->keys, guid, (void **) &value);
-        if (ret < 0) return NULL;
+        if (unlikely(ret < 0)) {
+            if (unlikely(version != NULL)) *version = 0;
+            *dst_na = NULL;
+            return NULL;
+        }
         if (unlikely(version != NULL)) *version = value->version;
-        return &value->na;
+
+        gps_i_routing_table_get_next_hop_at_position(cache->routing_table,
+                value->position_in_routing_table, dst_na, &next_hop_na, &neighbor_info);
+        return neighbor_info;
     }
 
     /**

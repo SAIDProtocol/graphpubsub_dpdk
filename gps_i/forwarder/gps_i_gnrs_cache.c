@@ -24,7 +24,8 @@
 
 struct gps_i_gnrs_cache *
 gps_i_gnrs_cache_create(const char *type, uint32_t entries,
-        unsigned value_slots, unsigned socket_id) {
+        unsigned value_slots, unsigned socket_id,
+        const struct gps_i_routing_table *routing_table) {
 
     struct gps_i_gnrs_cache *cache = NULL;
     char tmp_name[RTE_MEMZONE_NAMESIZE];
@@ -50,6 +51,7 @@ gps_i_gnrs_cache_create(const char *type, uint32_t entries,
         goto fail;
     }
     DEBUG("cache=%p", cache);
+    cache->routing_table = routing_table;
 
     snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "GNRSK_%s", type);
     DEBUG("name for key: %s", params.name);
@@ -126,16 +128,16 @@ int32_t
 gps_i_gnrs_cache_set(struct gps_i_gnrs_cache * cache,
         const struct gps_guid *guid, const struct gps_na *na, uint32_t version) {
     struct gps_i_gnrs_cache_entry *entry = NULL, *new_entry, *orig_entry;
-    int position, ret;
+    int position, ret, position_in_routing_table;
 #ifdef GPS_I_GNRS_CACHE_DEBUG
     char guid_buf[GPS_GUID_FMT_SIZE], entry_buf[GPS_I_GNRS_CACHE_ENTRY_FMT_SIZE],
-            orig_entry_buf[GPS_I_GNRS_CACHE_ENTRY_FMT_SIZE];
+            orig_entry_buf[GPS_I_GNRS_CACHE_ENTRY_FMT_SIZE], na_buf[GPS_NA_FMT_SIZE];
 #endif
 
     position = rte_hash_lookup_data_x(cache->keys, guid, (void **) &entry);
     DEBUG("lookup %s, got: %" PRIi32 ", entry=%s [%p]",
             gps_guid_format(guid_buf, sizeof (guid_buf), guid), position,
-            entry == NULL ? "" : gps_i_gnrs_cache_entry_format(entry_buf, sizeof (entry_buf), entry),
+            entry == NULL ? "" : gps_i_gnrs_cache_entry_format(cache, entry_buf, sizeof (entry_buf), entry),
             entry);
 
     if (position < 0) { // an earlier version
@@ -145,15 +147,21 @@ gps_i_gnrs_cache_set(struct gps_i_gnrs_cache * cache,
             DEBUG("Cannot get entry!");
             return -1;
         }
-        gps_na_copy(&new_entry->na, na);
+        position_in_routing_table = gps_i_routing_table_get_position(cache->routing_table, na);
+        // need to make sure that the routing table does have this na.
+        if (unlikely(position_in_routing_table < 0)) {
+            DEBUG("Cannot get entry in routing table %p, na=%s", cache->routing_table, gps_na_format(na_buf, sizeof (na_buf), na));
+            assert(false);
+        }
+        new_entry->position_in_routing_table = position_in_routing_table;
         new_entry->version = version;
         orig_entry = NULL;
         position = rte_hash_add_key_data_x(cache->keys, guid, new_entry, (void **) &orig_entry);
         DEBUG("add %s->%s [%p], orig=%s [%p] ret=%" PRIi32,
                 gps_guid_format(guid_buf, sizeof (guid_buf), guid),
-                gps_i_gnrs_cache_entry_format(entry_buf, sizeof (entry_buf), new_entry),
+                gps_i_gnrs_cache_entry_format(cache, entry_buf, sizeof (entry_buf), new_entry),
                 new_entry,
-                orig_entry == NULL ? "" : gps_i_gnrs_cache_entry_format(orig_entry_buf, sizeof (orig_entry_buf), orig_entry),
+                orig_entry == NULL ? "" : gps_i_gnrs_cache_entry_format(cache, orig_entry_buf, sizeof (orig_entry_buf), orig_entry),
                 orig_entry, position);
         assert(orig_entry == NULL);
 
@@ -164,14 +172,17 @@ gps_i_gnrs_cache_set(struct gps_i_gnrs_cache * cache,
             DEBUG("Cannot get entry!");
             return -1;
         }
-        gps_na_copy(& new_entry->na, na);
+        position_in_routing_table = gps_i_routing_table_get_position(cache->routing_table, na);
+        // need to make sure that the routing table does have this na.
+        assert(position >= 0);
+        new_entry->position_in_routing_table = position_in_routing_table;
         new_entry->version = version;
         ret = rte_hash_add_key_data_x(cache->keys, guid, new_entry, (void **) &orig_entry);
         DEBUG("add %s->%s [%p], orig=%s [%p] ret=%" PRIi32,
                 gps_guid_format(guid_buf, sizeof (guid_buf), guid),
-                gps_i_gnrs_cache_entry_format(entry_buf, sizeof (entry_buf), new_entry),
+                gps_i_gnrs_cache_entry_format(cache, entry_buf, sizeof (entry_buf), new_entry),
                 new_entry,
-                orig_entry == NULL ? "" : gps_i_gnrs_cache_entry_format(orig_entry_buf, sizeof (orig_entry_buf), orig_entry),
+                orig_entry == NULL ? "" : gps_i_gnrs_cache_entry_format(cache, orig_entry_buf, sizeof (orig_entry_buf), orig_entry),
                 orig_entry, position);
         assert(ret == position && orig_entry == entry);
         // add orig_entry to free
@@ -198,7 +209,7 @@ gps_i_gnrs_cache_delete(struct gps_i_gnrs_cache * cache,
     if (position >= 0) {
         DEBUG("delete %s->%s [%p], ret=%" PRIi32,
                 gps_guid_format(guid_buf, sizeof (guid_buf), guid),
-                gps_i_gnrs_cache_entry_format(entry_buf, sizeof (entry_buf), entry),
+                gps_i_gnrs_cache_entry_format(cache, entry_buf, sizeof (entry_buf), entry),
                 entry, position);
         ret = rte_ring_enqueue(cache->key_positions_to_free, (void *) ((intptr_t) position));
         DEBUG("Add %" PRIi32 " to key_positions_to_free, ret=%" PRIi32 ".", position, ret);
@@ -271,7 +282,7 @@ gps_i_gnrs_cache_print(struct gps_i_gnrs_cache *cache,
         assert(position >= 0);
         fprintf(stream, "  %s -> %s\n",
                 gps_guid_format(guid_buf, sizeof (guid_buf), guid),
-                gps_i_gnrs_cache_entry_format(entry_buf, sizeof (entry_buf), entry));
+                gps_i_gnrs_cache_entry_format(cache, entry_buf, sizeof (entry_buf), entry));
     }
     fprintf(stream, ">>>>>>>>>>\n");
 }

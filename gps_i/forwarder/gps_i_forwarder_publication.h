@@ -55,42 +55,46 @@ extern "C" {
         if (gps_na_is_empty(dst_na)) {
             dst_guid = gps_pkt_publication_const_get_dst_guid(publication);
             DEBUG("dst_guid=%s", gps_guid_format(guid_buf, sizeof (guid_buf), dst_guid));
-            target_na = gps_i_gnrs_cache_lookup(lcore->forwarder->gnrs_cache, dst_guid, NULL);
-            DEBUG("Lookup GNRS cache, got=%s [%p]",
-                    target_na == NULL ? "" : gps_na_format(na_buf, sizeof (na_buf), target_na),
-                    target_na);
-            if (target_na == NULL) {
+            target_neighbor_info = gps_i_gnrs_cache_lookup(lcore->forwarder->gnrs_cache, dst_guid, NULL, &target_na);
+            if (target_neighbor_info == NULL) {
                 DEBUG("Cannot find target_na, send to control ring");
                 if (unlikely(!gps_i_forwarder_try_send_to_ring(&lcore->control_ring, pkt))) {
                     DEBUG("control ring full, discard pkt: %p", pkt);
+                    rte_free(pkt);
                 }
                 return;
             }
+            DEBUG("Lookup GNRS cache, got=%s [%p], %s [%p]",
+                    gps_na_format(na_buf, sizeof (na_buf), target_na), target_na,
+                    gps_i_neighbor_info_format(info_buf, sizeof (info_buf), target_neighbor_info), target_neighbor_info);
+
             gps_na_copy(dst_na, target_na);
-        }
-        if (gps_na_cmp(dst_na, &lcore->forwarder->my_na) == 0) {
-            DEBUG("I'm the RP, handle with RP logic");
-            gps_i_forwarder_handle_publication_rp(lcore, pkt, publication);
-            return;
-        }
-
-        target_neighbor_info = gps_i_routing_table_get_next_hop(lcore->forwarder->routing_table, dst_na, NULL);
-
-        if (unlikely(target_neighbor_info == NULL)) {
-            DEBUG("Lookup dst_na %s in routing table, cannot find. Free packet: %p",
+            if (gps_na_cmp(dst_na, &lcore->forwarder->my_na) == 0) {
+                DEBUG("I'm the RP, handle with RP logic");
+                gps_i_forwarder_handle_publication_rp(lcore, pkt, publication);
+                return;
+            }
+            gps_i_forwarder_encapsulate(lcore, pkt, target_neighbor_info);
+        } else {
+            if (gps_na_cmp(dst_na, &lcore->forwarder->my_na) == 0) {
+                DEBUG("I'm the RP, handle with RP logic");
+                gps_i_forwarder_handle_publication_rp(lcore, pkt, publication);
+                return;
+            }
+            target_neighbor_info = gps_i_routing_table_get_next_hop(lcore->forwarder->routing_table, dst_na, NULL);
+            if (unlikely(target_neighbor_info == NULL)) {
+                DEBUG("Lookup dst_na %s in routing table, cannot find. Free packet: %p",
+                        gps_na_format(na_buf, sizeof (na_buf), dst_na),
+                        pkt);
+                rte_pktmbuf_free(pkt);
+                return;
+            }
+            DEBUG("Lookup dst_na %s in routing table, got: %s",
                     gps_na_format(na_buf, sizeof (na_buf), dst_na),
-                    pkt);
-            rte_pktmbuf_free(pkt);
-            return;
+                    gps_i_neighbor_info_format(info_buf, sizeof (info_buf), target_neighbor_info));
+            gps_i_forwarder_encapsulate(lcore, pkt, target_neighbor_info);
+
         }
-        DEBUG("Lookup dst_na %s in routing table, got: %s",
-                gps_na_format(na_buf, sizeof (na_buf), dst_na),
-                gps_i_neighbor_info_format(info_buf, sizeof (info_buf), target_neighbor_info));
-        gps_i_forwarder_encapsulate(lcore, pkt, target_neighbor_info);
-        //        anno = rte_mbuf_to_priv(pkt);
-        //        gps_na_copy(&anno->next_hop_na, target_na);
-        //        DEBUG("set next_hop_na=%s in anno", gps_na_format(na_buf, sizeof (na_buf), &anno->next_hop_na));
-        //        gps_i_forwarder_encapsulate(lcore, pkt);
     }
 
     static __rte_always_inline void

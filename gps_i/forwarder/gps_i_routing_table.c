@@ -54,7 +54,7 @@ gps_i_routing_entry_print(const struct gps_i_routing_table *table,
 struct gps_i_routing_table *
 gps_i_routing_table_create(const char *type, uint32_t entries,
         unsigned values_to_free, unsigned socket_id,
-        struct gps_i_neighbor_table *neighbor_table) {
+        const struct gps_i_neighbor_table *neighbor_table) {
     char tmp_name[RTE_MEMZONE_NAMESIZE];
     struct gps_i_routing_table *table;
     DEBUG("entries=%" PRIu32 ", values_to_free=%" PRIu32, entries, values_to_free);
@@ -392,7 +392,7 @@ gps_i_routing_table_destroy(struct gps_i_routing_table * table) {
 }
 
 void
-gps_i_routing_table_print(struct gps_i_routing_table *table,
+gps_i_routing_table_print(const struct gps_i_routing_table *table,
         FILE *stream, const char *fmt, ...) {
     const struct gps_na *dst_na;
     struct gps_i_routing_entry *entry;

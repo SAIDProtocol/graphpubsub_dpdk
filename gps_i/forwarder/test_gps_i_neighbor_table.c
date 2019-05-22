@@ -464,7 +464,7 @@ test_neighbor_table_rcu_master(void) {
 
 static void
 test_neighbor_table_read(void) {
-    const char *neighbor_table_file = "test_read_neighbor_table.txt";
+    const char *neighbor_table_file = "../test_read_neighbor_table.txt";
     struct gps_i_neighbor_table *table;
 
     table = gps_i_neighbor_table_create("read", 511, 1024, rte_socket_id());

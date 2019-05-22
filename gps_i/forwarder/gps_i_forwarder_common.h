@@ -130,7 +130,8 @@ extern "C" {
         forwarder->gnrs_cache = gps_i_gnrs_cache_create(name,
                 GPS_I_FORWARDER_GNRS_CACHE_SIZE,
                 GPS_I_FORWARDER_GNRS_CACHE_ENTRY_SIZE,
-                socket_id);
+                socket_id,
+                forwarder->routing_table);
         if (unlikely(forwarder->gnrs_cache == NULL)) {
             DEBUG("fail to create gnrs_cache, reason: %s", rte_strerror(rte_errno));
             goto fail;

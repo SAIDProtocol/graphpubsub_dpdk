@@ -64,7 +64,7 @@ extern "C" {
     struct gps_i_routing_table *
     gps_i_routing_table_create(const char *type, uint32_t entries,
             unsigned values_to_free, unsigned socket_id,
-            struct gps_i_neighbor_table *neighbor_table);
+            const struct gps_i_neighbor_table *neighbor_table);
 
     /**
      * Add an entry into the routing table.
@@ -162,7 +162,7 @@ extern "C" {
      * @param distance
      *   Output. The distance associated witht he next hop na. Can be NULL
      * @return 
-     *   - The next hop na with lowest distance.
+     *   - The next hop neighbor info with lowest distance.
      *   - NULL if entry not exist.
      */
     static __rte_always_inline const struct gps_i_neighbor_info *
@@ -220,8 +220,31 @@ extern "C" {
      *   The variables of the leading string.
      */
     void
-    gps_i_routing_table_print(struct gps_i_routing_table *table,
+    gps_i_routing_table_print(const struct gps_i_routing_table *table,
             FILE *stream, const char *fmt, ...);
+
+    static __rte_always_inline int32_t
+    gps_i_routing_table_get_position(const struct gps_i_routing_table * table,
+            const struct gps_na *na) {
+        return rte_hash_lookup_x(table->keys, na);
+    }
+
+    static __rte_always_inline void
+    gps_i_routing_table_get_entry_at_position(const struct gps_i_routing_table *table,
+            int32_t position, const struct gps_na **dst_na,
+            const struct gps_i_routing_entry **entry) {
+        rte_hash_get_key_data_with_position_force_x(table->keys, position, (const void **) dst_na, (const void **) entry);
+    }
+
+    static __rte_always_inline void
+    gps_i_routing_table_get_next_hop_at_position(const struct gps_i_routing_table *table,
+            int32_t position, const struct gps_na **dst_na, const struct gps_na **next_hop_na,
+            const struct gps_i_neighbor_info **next_hop_neighbor) {
+        const struct gps_i_routing_entry *entry;
+        gps_i_routing_table_get_entry_at_position(table, position, dst_na, &entry);
+        int32_t position_in_neighbor_table = entry->elements[ entry->min_idx].position_in_neighbor_table;
+        gps_i_neighbor_table_get_entry_at_position(table->neighbor_table, position_in_neighbor_table, next_hop_na, next_hop_neighbor);
+    }
 
 
     /**

@@ -12,6 +12,8 @@
 GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=1G hugepagesz=1G hugepages=64 isolcpus=10-19 nohz_full=10-19 rcu_nocbs=10-19 rcu_nocb_poll audit=0 nosoftlockup"
 ```  
 
+**Require package:** Userspace RCU (install following https://liburcu.org/, do not use liburcu-dev)
+
 ## basic  
 Basic benchmark.  
 * **generator**  

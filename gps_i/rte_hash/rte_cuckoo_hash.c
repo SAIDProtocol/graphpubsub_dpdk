@@ -1647,6 +1647,19 @@ rte_hash_get_key_data_with_position_x(const struct rte_hash_x *h, const int32_t 
 	return 0;
 }
 
+void
+rte_hash_get_key_data_with_position_force_x(const struct rte_hash_x *h, const int32_t position,
+			       const void **key, const void **data)
+{
+	RETURN_IF_TRUE(((h == NULL) || (key == NULL)), -EINVAL);
+
+	struct rte_hash_key_x *k, *keys = h->key_store;
+	k = (struct rte_hash_key_x *) ((char *) keys + (position + 1) *
+				     h->key_entry_size);
+	*key = k->key;
+        *data = k->pdata;
+}
+
 
 int /* __rte_experimental */
 rte_hash_free_key_with_position_x(const struct rte_hash_x *h,

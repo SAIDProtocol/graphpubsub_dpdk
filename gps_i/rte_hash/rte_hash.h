@@ -387,6 +387,10 @@ int
 rte_hash_get_key_data_with_position_x(const struct rte_hash_x *h, const int32_t position,
 			       const void **key, void **data);
 
+void
+rte_hash_get_key_data_with_position_force_x(const struct rte_hash_x *h, const int32_t position,
+			       const void **key, const void **data);
+
 /**
  *  * Free a hash key in the hash table given the position
  * of the key. This operation is not multi-thread safe and should

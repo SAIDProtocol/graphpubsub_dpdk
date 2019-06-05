@@ -701,29 +701,7 @@ generator_publication_downstream(struct rte_ring *processor_ring, struct gps_i_f
     struct rte_mempool *pkt_pool = forwarder->pkt_pool;
 
     char na_buf[GPS_NA_FMT_SIZE], guid_buf[GPS_GUID_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
-
-    ret = gps_i_subscription_table_set(forwarder->subscription_table,
-            gps_guid_set(&guid, 0x12345678),
-            gps_na_set(&na, 0x12345));
-    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
-    if (ret < 0) FAIL("Cannot set subscription table");
-    ret = gps_i_subscription_table_set(forwarder->subscription_table,
-            gps_guid_set(&guid, 0x23456789),
-            gps_na_set(&na, 0x12345));
-    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
-    if (ret < 0) FAIL("Cannot set subscription table");
-    ret = gps_i_subscription_table_set(forwarder->subscription_table,
-            gps_guid_set(&guid, 0x23456789),
-            gps_na_set(&na, 0x23456));
-    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
-    if (ret < 0) FAIL("Cannot set subscription table");
-    ret = gps_i_subscription_table_set(forwarder->subscription_table,
-            gps_guid_set(&guid, 0x23456789),
-            gps_na_set(&na, 0x34567));
-    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
-    if (ret < 0) FAIL("Cannot set subscription table");
-    gps_i_subscription_table_print(forwarder->subscription_table, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] after set", __func__, __LINE__);
-
+    
     neighbor_info = gps_i_neighbor_table_get_entry(forwarder->neighbor_table);
     DEBUG("neighbor table get entry=%p", neighbor_info);
     if (neighbor_info == NULL) FAIL("Cannot get entry from neighbor table");
@@ -752,6 +730,30 @@ generator_publication_downstream(struct rte_ring *processor_ring, struct gps_i_f
     DEBUG("neighbor table set %s -> %s, ret=%p", gps_na_format(na_buf, sizeof (na_buf), &na), gps_i_neighbor_info_format(info_buf, sizeof (info_buf), neighbor_info), ret_info);
     if (ret_info != NULL) FAIL("Cannot set entry into neighbor table, ret=%p", ret_info);
     gps_i_neighbor_table_print(forwarder->neighbor_table, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] routing table", __func__, __LINE__);
+
+    
+    ret = gps_i_subscription_table_set(forwarder->subscription_table,
+            gps_guid_set(&guid, 0x12345678),
+            gps_na_set(&na, 0x12345));
+    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set subscription table");
+    ret = gps_i_subscription_table_set(forwarder->subscription_table,
+            gps_guid_set(&guid, 0x23456789),
+            gps_na_set(&na, 0x12345));
+    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set subscription table");
+    ret = gps_i_subscription_table_set(forwarder->subscription_table,
+            gps_guid_set(&guid, 0x23456789),
+            gps_na_set(&na, 0x23456));
+    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set subscription table");
+    ret = gps_i_subscription_table_set(forwarder->subscription_table,
+            gps_guid_set(&guid, 0x23456789),
+            gps_na_set(&na, 0x34567));
+    DEBUG("subscription set %s -> %s, ret=%" PRIi32, gps_guid_format(guid_buf, sizeof (guid_buf), &guid), gps_na_format(na_buf, sizeof (na_buf), &na), ret);
+    if (ret < 0) FAIL("Cannot set subscription table");
+    gps_i_subscription_table_print(forwarder->subscription_table, stdout, "TEST_FORWARDER_LOGIC: [%s():%d] after set", __func__, __LINE__);
+
 
     printf("\n");
 
@@ -792,8 +794,8 @@ test_forwarder_logic(void) {
     dump_mem("dmp_test_forwarder_logic_0.txt");
     //    test_logic_master("decap", generator_decapsulation);
     dump_mem("dmp_test_forwarder_logic_1.txt");
-    test_logic_master("decap", generator_publication_upstream);
+    //    test_logic_master("decap", generator_publication_upstream);
     dump_mem("dmp_test_forwarder_logic_2.txt");
-    //    test_logic_master("decap", generator_publication_downstream);
+    test_logic_master("decap", generator_publication_downstream);
     dump_mem("dmp_test_forwarder_logic_3.txt");
 }

@@ -100,104 +100,104 @@ extern "C" {
     static __rte_always_inline void
     gps_i_forwarder_handle_publication_downstream(struct gps_i_forwarder_process_lcore *lcore,
             struct rte_mbuf *pkt, struct gps_pkt_publication *publication) {
-        RTE_SET_USED(lcore);
-        RTE_SET_USED(pkt);
-        RTE_SET_USED(publication);
-        //        const struct gps_guid *dst_guid;
-        //        const struct gps_i_subscription_entry *entry;
-        //        struct gps_i_anno *anno;
-        //        uint32_t i;
-        //#ifdef GPS_I_FORWARDER_PUBLICATION_DEBUG
-        //        char dst_guid_buf[GPS_GUID_FMT_SIZE], na_buf[GPS_NA_FMT_SIZE];
-        //#endif
-        //
-        //        DEBUG("Publication downstream!");
-        //        dst_guid = gps_pkt_publication_get_dst_guid(publication);
-        //        DEBUG("dst_guid=%s", gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), dst_guid));
-        //
-        //        entry = gps_i_subscription_table_lookup(lcore->forwarder->subscription_table, dst_guid);
-        //
-        //        if (entry == NULL) {
-        //            DEBUG("Lookup guid found nothing, free publication packet: %p", pkt);
-        //            rte_pktmbuf_free(pkt);
-        //            return;
-        //        }
-        //
-        //#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
-        //        struct rte_mbuf *created;
-        //        char *data;
-        //        rte_pktmbuf_linearize(pkt);
-        //        for (i = 0; i < entry->count - 1; i++) {
-        //            created = rte_pktmbuf_alloc(lcore->forwarder->pkt_pool);
-        //            if (created == NULL) {
-        //                DEBUG("Cannot allocate a new packet!");
-        //                break;
-        //            }
-        //            DEBUG("created=%p", created);
-        //            created->port = pkt->port;
-        //            created->vlan_tci = pkt->vlan_tci;
-        //            created->vlan_tci_outer = pkt->vlan_tci_outer;
-        //            created->tx_offload = pkt->tx_offload;
-        //            created->hash = pkt->hash;
-        //            data = rte_pktmbuf_append(created, rte_pktmbuf_data_len(pkt));
-        //            DEBUG("data=%p", data);
-        //            rte_memcpy(data, publication, rte_pktmbuf_data_len(pkt));
-        //            anno = rte_mbuf_to_priv(created);
-        //            gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
-        //            DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
-        //            gps_i_forwarder_encapsulate(lcore, created);
-        //        }
-        //        // handle the last packet, use pkt itself.
-        //        anno = rte_mbuf_to_priv(pkt);
-        //        gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
-        //        DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
-        //        gps_i_forwarder_encapsulate(lcore, pkt);
-        //
-        //#elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE
-        //        struct rte_mbuf *cloned;
-        //        for (i = 0; i < entry->count - 1; i++) {
-        //            cloned = rte_pktmbuf_clone(pkt, lcore->forwarder->pkt_pool);
-        //            if (cloned == NULL) {
-        //                DEBUG("Cannot clone a new packet!");
-        //                break;
-        //            }
-        //            DEBUG("cloned=%p", cloned);
-        //            anno = rte_mbuf_to_priv(cloned);
-        //            gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
-        //            DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
-        //            gps_i_forwarder_encapsulate(lcore, cloned);
-        //        }
-        //        // handle the last packet, use pkt itself.
-        //        anno = rte_mbuf_to_priv(pkt);
-        //        gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
-        //        DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
-        //        gps_i_forwarder_encapsulate(lcore, pkt);
-        //#elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
-        //        struct rte_mbuf *hdr;
-        //        rte_pktmbuf_refcnt_update(pkt, (uint16_t) entry->count - 1);
-        //        for (i = 0; i < entry->count; i++) {
-        //            if (unlikely((hdr = rte_pktmbuf_alloc(lcore->forwarder->hdr_pool)) == NULL)) {
-        //                DEBUG("Cannot create a new header!");
-        //                break;
-        //            }
-        //            hdr->next = pkt;
-        //            hdr->pkt_len = (uint16_t) (hdr->data_len + pkt->pkt_len);
-        //            hdr->nb_segs = pkt->nb_segs + 1;
-        //            hdr->port = pkt->port;
-        //            hdr->vlan_tci = pkt->vlan_tci;
-        //            hdr->vlan_tci_outer = pkt->vlan_tci_outer;
-        //            hdr->tx_offload = pkt->tx_offload;
-        //            hdr->hash = pkt->hash;
-        ////            gps_na_copy((struct gps_na *)rte_pktmbuf_prepend(hdr, sizeof(struct gps_na)), entry->next_hops + i);
-        //            anno = rte_mbuf_to_priv(hdr);
-        //            gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
-        //            DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
-        //            gps_i_forwarder_encapsulate(lcore, hdr);
-        //        }
-        ////        rte_pktmbuf_free(pkt);
-        //#else
-        //#error "Need to specify a correct GPS_I_FORWARDER_PUBLICATION_ACTION"
-        //#endif
+        const struct gps_guid *dst_guid;
+        const struct gps_na *next_hop_na;
+        const struct gps_i_neighbor_info *next_hop_neighbor;
+        const struct gps_i_subscription_entry *entry;
+        uint32_t i;
+#ifdef GPS_I_FORWARDER_PUBLICATION_DEBUG
+        char dst_guid_buf[GPS_GUID_FMT_SIZE], na_buf[GPS_NA_FMT_SIZE], neighbor_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+#endif
+
+        DEBUG("Publication downstream!");
+        dst_guid = gps_pkt_publication_get_dst_guid(publication);
+        DEBUG("dst_guid=%s", gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), dst_guid));
+
+        entry = gps_i_subscription_table_lookup(lcore->forwarder->subscription_table, dst_guid);
+
+        if (entry == NULL) {
+            DEBUG("Lookup guid found nothing, free publication packet: %p", pkt);
+            rte_pktmbuf_free(pkt);
+            return;
+        }
+
+#if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
+        struct rte_mbuf *created;
+        char *data;
+        rte_pktmbuf_linearize(pkt);
+        for (i = 0; i < entry->count - 1; i++) {
+            created = rte_pktmbuf_alloc(lcore->forwarder->pkt_pool);
+            if (created == NULL) {
+                DEBUG("Cannot allocate a new packet!");
+                break;
+            }
+            DEBUG("created=%p", created);
+            created->port = pkt->port;
+            created->vlan_tci = pkt->vlan_tci;
+            created->vlan_tci_outer = pkt->vlan_tci_outer;
+            created->tx_offload = pkt->tx_offload;
+            created->hash = pkt->hash;
+            data = rte_pktmbuf_append(created, rte_pktmbuf_data_len(pkt));
+            DEBUG("data=%p", data);
+            rte_memcpy(data, publication, rte_pktmbuf_data_len(pkt));
+            gps_i_neighbor_table_get_entry_at_position(lcore->forwarder->neighbor_table, entry->next_hop_positions_in_neighbor_table[i], &next_hop_na, &next_hop_neighbor);
+            DEBUG("next_hop=%s|%s",
+                    gps_na_format(na_buf, sizeof (na_buf), next_hop_na),
+                    gps_i_neighbor_info_format(neighbor_buf, sizeof (neighbor_buf), next_hop_neighbor));
+            gps_i_forwarder_encapsulate(lcore, created, next_hop_neighbor);
+        }
+        // handle the last packet, use pkt itself.
+        gps_i_neighbor_table_get_entry_at_position(lcore->forwarder->neighbor_table, entry->next_hop_positions_in_neighbor_table[i], &next_hop_na, &next_hop_neighbor);
+        DEBUG("next_hop=%s|%s",
+                gps_na_format(na_buf, sizeof (na_buf), next_hop_na),
+                gps_i_neighbor_info_format(neighbor_buf, sizeof (neighbor_buf), next_hop_neighbor));
+        gps_i_forwarder_encapsulate(lcore, pkt, next_hop_neighbor);
+
+#elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE
+        struct rte_mbuf *cloned;
+        for (i = 0; i < entry->count - 1; i++) {
+            cloned = rte_pktmbuf_clone(pkt, lcore->forwarder->pkt_pool);
+            if (cloned == NULL) {
+                DEBUG("Cannot clone a new packet!");
+                break;
+            }
+            DEBUG("cloned=%p", cloned);
+            anno = rte_mbuf_to_priv(cloned);
+            gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
+            DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
+            gps_i_forwarder_encapsulate(lcore, cloned);
+        }
+        // handle the last packet, use pkt itself.
+        anno = rte_mbuf_to_priv(pkt);
+        gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
+        DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
+        gps_i_forwarder_encapsulate(lcore, pkt);
+#elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+        struct rte_mbuf *hdr;
+        rte_pktmbuf_refcnt_update(pkt, (uint16_t) entry->count - 1);
+        for (i = 0; i < entry->count; i++) {
+            if (unlikely((hdr = rte_pktmbuf_alloc(lcore->forwarder->hdr_pool)) == NULL)) {
+                DEBUG("Cannot create a new header!");
+                break;
+            }
+            hdr->next = pkt;
+            hdr->pkt_len = (uint16_t) (hdr->data_len + pkt->pkt_len);
+            hdr->nb_segs = pkt->nb_segs + 1;
+            hdr->port = pkt->port;
+            hdr->vlan_tci = pkt->vlan_tci;
+            hdr->vlan_tci_outer = pkt->vlan_tci_outer;
+            hdr->tx_offload = pkt->tx_offload;
+            hdr->hash = pkt->hash;
+            //            gps_na_copy((struct gps_na *)rte_pktmbuf_prepend(hdr, sizeof(struct gps_na)), entry->next_hops + i);
+            anno = rte_mbuf_to_priv(hdr);
+            gps_na_copy(&anno->next_hop_na, entry->next_hops + i);
+            DEBUG("next_hop=%s", gps_na_format(na_buf, sizeof (na_buf), entry->next_hops + i));
+            gps_i_forwarder_encapsulate(lcore, hdr);
+        }
+        //        rte_pktmbuf_free(pkt);
+#else
+#error "Need to specify a correct GPS_I_FORWARDER_PUBLICATION_ACTION"
+#endif
     }
 
     static __rte_always_inline void

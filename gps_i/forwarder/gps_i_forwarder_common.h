@@ -54,7 +54,7 @@ extern "C" {
 #define GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE 1
 #define GPS_I_FORWARDER_PUBLICATION_ACTION_COPY 2
 
-#define GPS_I_FORWARDER_PUBLICATION_ACTION GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
+#define GPS_I_FORWARDER_PUBLICATION_ACTION GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
 
     struct gps_i_forwarder_control_plane {
         struct gps_i_neighbor_table *neighbor_table;
@@ -141,7 +141,8 @@ extern "C" {
         forwarder->subscription_table = gps_i_subscription_table_create(name,
                 GPS_I_FORWARDER_SUBSCRIPTION_TABLE_SIZE,
                 GPS_I_FORWARDER_SUBSCRIPTION_TABLE_ENTRIRS_TO_FREE,
-                socket_id);
+                socket_id,
+                forwarder->neighbor_table);
         if (unlikely(forwarder->subscription_table == NULL)) {
             DEBUG("fail to create subscription table, reason: %s", rte_strerror(rte_errno));
             goto fail;

@@ -179,21 +179,25 @@ gps_i_routing_table_set(struct gps_i_routing_table * table,
 #endif
 
     struct gps_i_routing_entry *entry, *orig_entry, *new_entry;
-    const struct gps_na *tmp_na;
-    const struct gps_i_neighbor_info *tmp_value;
     int ret, position;
     uint32_t i;
+    int32_t position_in_neighbor_table;
 
     // lookup
     position = rte_hash_lookup_data_x(table->keys, dst_na, (void **) &entry);
     DEBUG("lookup %s, got: %" PRIi32 ", entry=%p",
             gps_na_format(na_buf, sizeof (na_buf), dst_na), position, entry);
+
+    position_in_neighbor_table = gps_i_neighbor_table_get_position(table->neighbor_table, next_hop_na);
+    if (unlikely(position_in_neighbor_table < 0)) {
+        DEBUG("Cannot get entry in neighbor table %p, na=%s", table->neighbor_table, gps_na_format(na_buf, sizeof (na_buf), next_hop_na));
+        assert(false);
+    }
+
     if (position >= 0) { // found entry, update
         // look for the existing element
         for (i = 0; i < entry->count; i++) {
-            gps_i_neighbor_table_get_entry_at_position(table->neighbor_table, entry->elements[i].position_in_neighbor_table, &tmp_na, &tmp_value);
-
-            if (gps_na_cmp(tmp_na, next_hop_na) == 0) { // found next_hop_na
+            if (entry->elements[i].position_in_neighbor_table == position_in_neighbor_table) { // found next_hop_na
                 if (entry->elements[i].distance == distance) {
                     // equivlant, no need to do anything
                     DEBUG("Found same next_hop and distance, i=%" PRIu32, i);
@@ -226,8 +230,7 @@ gps_i_routing_table_set(struct gps_i_routing_table * table,
             rte_memcpy(new_entry->elements, entry->elements, sizeof (struct gps_i_routing_element) * entry->count);
             new_entry->count = entry->count + 1;
 
-            new_entry->elements[i].position_in_neighbor_table = gps_i_neighbor_table_get_position(table->neighbor_table, next_hop_na);
-            assert(new_entry->elements[i].position_in_neighbor_table >= 0);
+            new_entry->elements[i].position_in_neighbor_table = position_in_neighbor_table;
             new_entry->elements[i].distance = distance;
             __gps_i_routing_table_find_minimal(new_entry);
 
@@ -248,8 +251,7 @@ gps_i_routing_table_set(struct gps_i_routing_table * table,
         if (entry == NULL) return -1;
         entry->count = 1;
         entry->min_idx = 0;
-        entry->elements[0].position_in_neighbor_table = gps_i_neighbor_table_get_position(table->neighbor_table, next_hop_na);
-        assert(entry->elements[0].position_in_neighbor_table >= 0);
+        entry->elements[0].position_in_neighbor_table = position_in_neighbor_table;
         entry->elements[0].distance = distance;
         position = rte_hash_add_key_data_x(table->keys, dst_na, entry, (void **) &orig_entry);
         DEBUG("add %s, got: %" PRIi32 ", orig_entry=%p",
@@ -270,19 +272,23 @@ gps_i_routing_table_delete(struct gps_i_routing_table * table,
     struct gps_i_routing_entry *entry, *orig_entry, *new_entry;
     int ret, position;
     uint32_t i;
-    const struct gps_na *tmp_na;
-    const struct gps_i_neighbor_info *tmp_value;
+    int32_t position_in_neighbor_table;
 
     // lookup
     position = rte_hash_lookup_data_x(table->keys, dst_na, (void **) &entry);
     DEBUG("lookup %s, got: %" PRIi32 ", entry=%p",
             gps_na_format(na_buf, sizeof (na_buf), dst_na), position, entry);
+
+    position_in_neighbor_table = gps_i_neighbor_table_get_position(table->neighbor_table, next_hop_na);
+    if (unlikely(position_in_neighbor_table < 0)) {
+        DEBUG("Cannot get entry in neighbor table %p, na=%s", table->neighbor_table, gps_na_format(na_buf, sizeof (na_buf), next_hop_na));
+        assert(false);
+    }
+
     if (position >= 0) { // found entry, update
         // look for the existing element
         for (i = 0; i < entry->count; i++) {
-            gps_i_neighbor_table_get_entry_at_position(table->neighbor_table, entry->elements[i].position_in_neighbor_table, &tmp_na, &tmp_value);
-
-            if (gps_na_cmp(tmp_na, next_hop_na) == 0) { // found next_hop_na
+            if (entry->elements[i].position_in_neighbor_table == position_in_neighbor_table) { // found next_hop_na
                 if (entry->count == 1) { // last element in entry, delete the whole entry.
                     DEBUG("Last element in the entry, delete the whole entry.");
                     ret = rte_hash_del_key_x(table->keys, dst_na, (void **) &orig_entry);
@@ -291,7 +297,6 @@ gps_i_routing_table_delete(struct gps_i_routing_table * table,
                     assert(orig_entry == entry);
                     DEBUG("Add %" PRIi32 " to key_positions_to_free.", ret);
                     ret = rte_ring_enqueue(table->key_positions_to_free, (void *) ((intptr_t) ret));
-
                 } else {
                     DEBUG("Remove element %d in the entry.", i);
                     new_entry = __gps_i_routing_table_malloc_entry(table->socket_id, entry->count - 1);

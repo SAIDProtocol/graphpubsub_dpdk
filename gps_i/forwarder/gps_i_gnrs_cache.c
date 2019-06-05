@@ -140,6 +140,13 @@ gps_i_gnrs_cache_set(struct gps_i_gnrs_cache * cache,
             entry == NULL ? "" : gps_i_gnrs_cache_entry_format(cache, entry_buf, sizeof (entry_buf), entry),
             entry);
 
+    position_in_routing_table = gps_i_routing_table_get_position(cache->routing_table, na);
+    // need to make sure that the routing table does have this na.
+    if (unlikely(position_in_routing_table < 0)) {
+        DEBUG("Cannot get entry in routing table %p, na=%s", cache->routing_table, gps_na_format(na_buf, sizeof (na_buf), na));
+        assert(false);
+    }
+
     if (position < 0) { // an earlier version
         if (likely(rte_mempool_get(cache->values, (void **) &new_entry) == 0)) {
             DEBUG("get entry: %p", new_entry);
@@ -147,12 +154,7 @@ gps_i_gnrs_cache_set(struct gps_i_gnrs_cache * cache,
             DEBUG("Cannot get entry!");
             return -1;
         }
-        position_in_routing_table = gps_i_routing_table_get_position(cache->routing_table, na);
         // need to make sure that the routing table does have this na.
-        if (unlikely(position_in_routing_table < 0)) {
-            DEBUG("Cannot get entry in routing table %p, na=%s", cache->routing_table, gps_na_format(na_buf, sizeof (na_buf), na));
-            assert(false);
-        }
         new_entry->position_in_routing_table = position_in_routing_table;
         new_entry->version = version;
         orig_entry = NULL;
@@ -172,9 +174,6 @@ gps_i_gnrs_cache_set(struct gps_i_gnrs_cache * cache,
             DEBUG("Cannot get entry!");
             return -1;
         }
-        position_in_routing_table = gps_i_routing_table_get_position(cache->routing_table, na);
-        // need to make sure that the routing table does have this na.
-        assert(position >= 0);
         new_entry->position_in_routing_table = position_in_routing_table;
         new_entry->version = version;
         ret = rte_hash_add_key_data_x(cache->keys, guid, new_entry, (void **) &orig_entry);

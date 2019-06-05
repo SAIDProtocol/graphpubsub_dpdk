@@ -8,6 +8,7 @@
 
 #include <gps_guid.h>
 #include <gps_na.h>
+#include "gps_i_neighbor_table.h"
 #include <rte_common.h>
 #include "rte_hash.h"
 #include <rte_ring.h>
@@ -18,19 +19,22 @@ extern "C" {
 
     struct gps_i_subscription_entry {
         uint32_t count;
-        struct gps_na next_hops[];
+        int32_t next_hop_positions_in_neighbor_table[];
     };
-
-    void
-    gps_i_subscription_entry_print(const struct gps_i_subscription_entry *entry,
-            FILE *stream, const char *fmt, ...);
 
     struct gps_i_subscription_table {
         struct rte_hash_x *keys;
         struct rte_ring *key_positions_to_free;
         struct rte_ring *values_to_free;
         unsigned socket_id;
+        const struct gps_i_neighbor_table *neighbor_table;
     };
+
+    void
+    gps_i_subscription_entry_print(const struct gps_i_subscription_table *table,
+            const struct gps_i_subscription_entry *entry,
+            FILE *stream, const char *fmt, ...);
+
 
     /**
      * Initiate a subscription table with specified number of entries on a socket id.
@@ -52,7 +56,8 @@ extern "C" {
      */
     struct gps_i_subscription_table *
     gps_i_subscription_table_create(const char *type, uint32_t entries,
-            unsigned values_to_free, unsigned socket_id);
+            unsigned values_to_free, unsigned socket_id,
+            const struct gps_i_neighbor_table *neighbor_table);
 
     /**
      * Add an entry into the subscription table.
@@ -72,7 +77,7 @@ extern "C" {
      *   - Less than 0 on failure.
      */
     int32_t
-    gps_i_subscription_table_set(struct gps_i_subscription_table * table,
+    gps_i_subscription_table_set(struct gps_i_subscription_table *table,
             const struct gps_guid *dst_guid, const struct gps_na *next_hop_na);
 
     /**
@@ -91,7 +96,7 @@ extern "C" {
      *   - Less than 0 on failure.
      */
     int32_t
-    gps_i_subscription_table_delete(struct gps_i_subscription_table * table,
+    gps_i_subscription_table_delete(struct gps_i_subscription_table *table,
             const struct gps_guid *dst_guid, const struct gps_na *next_hop_na);
 
     /**
@@ -179,7 +184,7 @@ extern "C" {
      * @param input The input file.
      */
     void
-    gps_i_subscription_table_read(struct gps_i_subscription_table *table, 
+    gps_i_subscription_table_read(struct gps_i_subscription_table *table,
             FILE *input, unsigned values_to_free);
 
 

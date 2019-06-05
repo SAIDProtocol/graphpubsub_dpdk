@@ -25,24 +25,34 @@
 #define _INFO(fmt, ...) RTE_LOG(INFO, SUBSCRIPTION_TABLE, "[%s():%d] " fmt "%.0s\n", __func__, __LINE__, __VA_ARGS__)
 
 void
-gps_i_subscription_entry_print(const struct gps_i_subscription_entry *entry,
+gps_i_subscription_entry_print(const struct gps_i_subscription_table *table,
+        const struct gps_i_subscription_entry *entry,
         FILE *stream, const char *fmt, ...) {
     va_list valist;
-    char na_buf[GPS_NA_FMT_SIZE];
+    char na_buf[GPS_NA_FMT_SIZE], neighbor_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
     uint32_t i;
+    const struct gps_na *next_hop_na;
+    const struct gps_i_neighbor_info *next_hop_neighbor;
+
     va_start(valist, fmt);
     vfprintf(stream, fmt, valist);
     va_end(valist);
 
     fprintf(stream, "c=%" PRIu32, entry->count);
     for (i = 0; i < entry->count; i++) {
-        fprintf(stream, " (%s)", gps_na_format(na_buf, sizeof (na_buf), &entry->next_hops[i]));
+        gps_i_neighbor_table_get_entry_at_position(table->neighbor_table,
+                entry->next_hop_positions_in_neighbor_table[i],
+                &next_hop_na, &next_hop_neighbor);
+        fprintf(stream, " (%s|%s)",
+                gps_na_format(na_buf, sizeof (na_buf), next_hop_na),
+                gps_i_neighbor_info_format(neighbor_buf, sizeof (neighbor_buf), next_hop_neighbor));
     }
 }
 
 struct gps_i_subscription_table *
 gps_i_subscription_table_create(const char *type, uint32_t entries,
-        unsigned values_to_free, unsigned socket_id) {
+        unsigned values_to_free, unsigned socket_id,
+        const struct gps_i_neighbor_table *neighbor_table) {
     char tmp_name[RTE_MEMZONE_NAMESIZE];
     struct gps_i_subscription_table *table;
     DEBUG("entries=%" PRIu32 ", values_to_free=%" PRIu32, entries, values_to_free);
@@ -67,6 +77,7 @@ gps_i_subscription_table_create(const char *type, uint32_t entries,
     }
     DEBUG("table=%p", table);
     table->socket_id = socket_id;
+    table->neighbor_table = neighbor_table;
 
     snprintf(tmp_name, RTE_MEMZONE_NAMESIZE, "STK_%s", type);
     DEBUG("name for key: %s", params.name);
@@ -122,7 +133,7 @@ fail:
 
 static __rte_always_inline uint32_t
 __gps_i_subscription_table_get_entry_size(uint32_t elements) {
-    return sizeof (struct gps_i_subscription_entry) + sizeof (struct gps_na) * elements;
+    return sizeof (struct gps_i_subscription_entry) + sizeof (int32_t) * elements;
 }
 
 static __rte_always_inline struct gps_i_subscription_entry *
@@ -147,19 +158,27 @@ int32_t
 gps_i_subscription_table_set(struct gps_i_subscription_table * table,
         const struct gps_guid *dst_guid, const struct gps_na *next_hop_na) {
 #ifdef GPS_I_SUBSCRIPTION_TABLE_DEBUG
-    char guid_buf[GPS_GUID_FMT_SIZE];
+    char guid_buf[GPS_GUID_FMT_SIZE], na_buf[GPS_NA_FMT_SIZE];
 #endif
 
     struct gps_i_subscription_entry *entry, *orig_entry, *new_entry;
     int ret, position;
     uint32_t i;
+    int32_t position_in_neighbor_table;
 
     position = rte_hash_lookup_data_x(table->keys, dst_guid, (void **) &entry);
     DEBUG("lookup %s, got: %" PRIi32 ", entry=%p",
             gps_guid_format(guid_buf, sizeof (guid_buf), dst_guid), position, entry);
+
+    position_in_neighbor_table = gps_i_neighbor_table_get_position(table->neighbor_table, next_hop_na);
+    if (unlikely(position_in_neighbor_table < 0)) {
+        DEBUG("Cannot get entry in neighbor table %p, na=%s", table->neighbor_table, gps_na_format(na_buf, sizeof (na_buf), next_hop_na));
+        assert(false);
+    }
+
     if (position >= 0) { // found entry, update
         for (i = 0; i < entry->count; i++) {
-            if (gps_na_cmp(&entry->next_hops[i], next_hop_na) == 0) { // found next_hop_na
+            if (entry->next_hop_positions_in_neighbor_table[i] == position_in_neighbor_table) { // found next_hop_na
                 DEBUG("Found same next_hop, i=%" PRIu32, i);
                 break;
             }
@@ -167,9 +186,9 @@ gps_i_subscription_table_set(struct gps_i_subscription_table * table,
         if (i == entry->count) {
             DEBUG("Cannot find next_hop_na, need add an element");
             new_entry = __gps_i_subscription_table_malloc_entry(table->socket_id, entry->count + 1);
-            rte_memcpy(new_entry->next_hops, entry->next_hops, sizeof (struct gps_na) * entry->count);
+            rte_memcpy(new_entry->next_hop_positions_in_neighbor_table, entry->next_hop_positions_in_neighbor_table, sizeof (int32_t) * entry->count);
             new_entry->count = entry->count + 1;
-            gps_na_copy(&new_entry->next_hops[i], next_hop_na);
+            new_entry->next_hop_positions_in_neighbor_table[i] = position_in_neighbor_table;
 
             ret = rte_hash_add_key_data_x(table->keys, dst_guid, new_entry, (void **) &orig_entry);
             DEBUG("add %s, got: %" PRIi32 ", orig_entry=%p",
@@ -186,7 +205,7 @@ gps_i_subscription_table_set(struct gps_i_subscription_table * table,
         DEBUG("Adding dst_guid for the first time, create new");
         entry = __gps_i_subscription_table_malloc_entry(table->socket_id, 1);
         entry->count = 1;
-        gps_na_copy(&entry->next_hops[0], next_hop_na);
+        entry->next_hop_positions_in_neighbor_table[0] = position_in_neighbor_table;
         position = rte_hash_add_key_data_x(table->keys, dst_guid, entry, (void **) &orig_entry);
         DEBUG("add %s, got: %" PRIi32 ", orig_entry=%p",
                 gps_guid_format(guid_buf, sizeof (guid_buf), dst_guid), position, orig_entry);
@@ -201,20 +220,28 @@ int32_t
 gps_i_subscription_table_delete(struct gps_i_subscription_table * table,
         const struct gps_guid *dst_guid, const struct gps_na *next_hop_na) {
 #ifdef GPS_I_SUBSCRIPTION_TABLE_DEBUG
-    char guid_buf[GPS_GUID_FMT_SIZE];
+    char guid_buf[GPS_GUID_FMT_SIZE], na_buf[GPS_NA_FMT_SIZE];
 #endif
 
     struct gps_i_subscription_entry *entry, *orig_entry, *new_entry;
     int ret, position;
     uint32_t i;
+    int32_t position_in_neighbor_table;
 
     // lookup
     position = rte_hash_lookup_data_x(table->keys, dst_guid, (void **) &entry);
     DEBUG("lookup %s, got: %" PRIi32 ", entry=%p",
             gps_guid_format(guid_buf, sizeof (guid_buf), dst_guid), position, entry);
+
+    position_in_neighbor_table = gps_i_neighbor_table_get_position(table->neighbor_table, next_hop_na);
+    if (unlikely(position_in_neighbor_table < 0)) {
+        DEBUG("Cannot get entry in neighbor table %p, na=%s", table->neighbor_table, gps_na_format(na_buf, sizeof (na_buf), next_hop_na));
+        assert(false);
+    }
+
     if (position >= 0) { // found entry, update
         for (i = 0; i < entry->count; i++) {
-            if (gps_na_cmp(&entry->next_hops[i], next_hop_na) == 0) { // found next_hop_na
+            if (entry->next_hop_positions_in_neighbor_table[i] == position_in_neighbor_table) { // found next_hop_na
                 if (entry->count == 1) { // last element in entry, delete the whole entry.
                     DEBUG("Last element in the entry, delete the whole entry.");
                     ret = rte_hash_del_key_x(table->keys, dst_guid, (void **) &orig_entry);
@@ -228,8 +255,8 @@ gps_i_subscription_table_delete(struct gps_i_subscription_table * table,
                     new_entry = __gps_i_subscription_table_malloc_entry(table->socket_id, entry->count - 1);
                     new_entry->count = entry->count - 1;
 
-                    rte_memcpy(new_entry->next_hops, entry->next_hops, sizeof (struct gps_guid) * i);
-                    rte_memcpy(new_entry->next_hops + i, entry->next_hops + i + 1, sizeof (struct gps_guid) * (new_entry->count - i));
+                    rte_memcpy(new_entry->next_hop_positions_in_neighbor_table, entry->next_hop_positions_in_neighbor_table, sizeof (int32_t) * i);
+                    rte_memcpy(new_entry->next_hop_positions_in_neighbor_table + i, entry->next_hop_positions_in_neighbor_table + i + 1, sizeof (int32_t) * (new_entry->count - i));
 
                     ret = rte_hash_add_key_data_x(table->keys, dst_guid, new_entry, (void **) &orig_entry);
                     DEBUG("add %s, got: %" PRIi32 ", orig_entry=%p",
@@ -340,7 +367,7 @@ gps_i_subscription_table_print(struct gps_i_subscription_table *table,
         if (position == -ENOENT)
             break;
         assert(position >= 0);
-        gps_i_subscription_entry_print(entry, stream, "  %s (%" PRIi32 ") -> [%p] ",
+        gps_i_subscription_entry_print(table, entry, stream, "  %s (%" PRIi32 ") -> [%p] ",
                 gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), dst_guid), position, entry);
         fprintf(stream, "\n");
     }

@@ -191,7 +191,7 @@ rte_hash_count_x(const struct rte_hash_x *h);
 /*
  * rte_hash_add_key_data_x(const struct rte_hash_x *h, const void *key, void *data);
  */
-int
+int32_t
 rte_hash_add_key_data_x(const struct rte_hash_x *h, const void *key, void *data, void **orig_data);
 
 /**
@@ -360,7 +360,7 @@ rte_hash_del_key_with_hash_x(const struct rte_hash_x *h, const void *key, void *
  *   - -EINVAL if the parameters are invalid.
  *   - -ENOENT if no valid key is found in the given position.
  */
-int
+int32_t
 rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t position,
 			       const void **key);
 
@@ -383,7 +383,7 @@ rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t posit
  *   - -EINVAL if the parameters are invalid.
  *   - -ENOENT if no valid key is found in the given position.
  */
-int
+int32_t
 rte_hash_get_key_data_with_position_x(const struct rte_hash_x *h, const int32_t position,
 			       const void **key, void **data);
 
@@ -415,7 +415,7 @@ rte_hash_get_key_data_with_position_force_x(const struct rte_hash_x *h, const in
  *   - -EINVAL if the parameters are invalid.
  */
 //int __rte_experimental
-int
+int32_t
 rte_hash_free_key_with_position_x(const struct rte_hash_x *h,
 				const int32_t position, void **data);
 
@@ -438,7 +438,7 @@ rte_hash_free_key_with_position_x(const struct rte_hash_x *h,
  *   - -EINVAL if the parameters are invalid.
  *   - -ENOENT if the key is not found.
  */
-int
+int32_t
 rte_hash_lookup_data_x(const struct rte_hash_x *h, const void *key, void **data);
 
 /**
@@ -463,7 +463,7 @@ rte_hash_lookup_data_x(const struct rte_hash_x *h, const void *key, void **data)
  *   - -EINVAL if the parameters are invalid.
  *   - -ENOENT if the key is not found.
  */
-int
+int32_t
 rte_hash_lookup_with_hash_data_x(const struct rte_hash_x *h, const void *key,
 					hash_sig_t sig, void **data);
 
@@ -543,7 +543,7 @@ rte_hash_hash_x(const struct rte_hash_x *h, const void *key);
  * @return
  *   -EINVAL if there's an error, otherwise number of successful lookups.
  */
-int
+int32_t
 rte_hash_lookup_bulk_data_x(const struct rte_hash_x *h, const void **keys,
 			uint32_t num_keys, uint64_t *hit_mask, void *data[]);
 
@@ -572,7 +572,7 @@ rte_hash_lookup_bulk_data_x(const struct rte_hash_x *h, const void **keys,
  * @return
  *   -EINVAL if there's an error, otherwise number of successful lookups.
  */
-int
+int32_t
 rte_hash_lookup_bulk_data_with_position_x(const struct rte_hash_x *h, const void **keys,
 			uint32_t num_keys, int32_t *positions, uint64_t *hit_mask, void *data[]);
 
@@ -597,7 +597,7 @@ rte_hash_lookup_bulk_data_with_position_x(const struct rte_hash_x *h, const void
  * @return
  *   -EINVAL if there's an error, otherwise number of successful lookups.
  */
-int
+int32_t
 rte_hash_lookup_bulk_x(const struct rte_hash_x *h, const void **keys,
 		      uint32_t num_keys, int32_t *positions);
 

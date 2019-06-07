@@ -343,6 +343,9 @@ rte_hash_create_x(const struct rte_hash_parameters_x *params)
 	case 8:
 		h->cmp_jump_table_idx = KEY_8_BYTES;
 		break;
+	case 12:
+		h->cmp_jump_table_idx = KEY_12_BYTES;
+		break;
 	case 16:
 		h->cmp_jump_table_idx = KEY_16_BYTES;
 		break;
@@ -1181,7 +1184,7 @@ rte_hash_add_key_x(const struct rte_hash_x *h, const void *key)
  * rte_hash_add_key_with_hash_data_x(const struct rte_hash_x *h,
  * 			const void *key, hash_sig_t sig, void *data, void **orig_data)
  */
-int
+int32_t
 rte_hash_add_key_with_hash_data_x(const struct rte_hash_x *h,
 			const void *key, hash_sig_t sig, void *data, void **orig_data)
 {
@@ -1193,7 +1196,7 @@ rte_hash_add_key_with_hash_data_x(const struct rte_hash_x *h,
  * int
  * rte_hash_add_key_data_x(const struct rte_hash_x *h, const void *key, void *data)
  */
-int
+int32_t
 rte_hash_add_key_data_x(const struct rte_hash_x *h, const void *key, void *data, void **orig_data)
 {
 	RETURN_IF_TRUE(((h == NULL) || (key == NULL)), -EINVAL);
@@ -1390,7 +1393,7 @@ rte_hash_lookup_x(const struct rte_hash_x *h, const void *key)
 	return __rte_hash_lookup_with_hash_x(h, key, rte_hash_hash_x(h, key), NULL);
 }
 
-int
+int32_t
 rte_hash_lookup_with_hash_data_x(const struct rte_hash_x *h,
 			const void *key, hash_sig_t sig, void **data)
 {
@@ -1398,7 +1401,7 @@ rte_hash_lookup_with_hash_data_x(const struct rte_hash_x *h,
 	return __rte_hash_lookup_with_hash_x(h, key, sig, data);
 }
 
-int
+int32_t
 rte_hash_lookup_data_x(const struct rte_hash_x *h, const void *key, void **data)
 {
 	RETURN_IF_TRUE(((h == NULL) || (key == NULL)), -EINVAL);
@@ -1607,7 +1610,7 @@ rte_hash_del_key_x(const struct rte_hash_x *h, const void *key, void **orig_data
 	return __rte_hash_del_key_with_hash_x(h, key, orig_data, rte_hash_hash_x(h, key));
 }
 
-int
+int32_t
 rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t position,
 			       const void **key)
 {
@@ -1627,7 +1630,7 @@ rte_hash_get_key_with_position_x(const struct rte_hash_x *h, const int32_t posit
 	return 0;
 }
 
-int
+int32_t
 rte_hash_get_key_data_with_position_x(const struct rte_hash_x *h, const int32_t position,
 			       const void **key, void **data)
 {
@@ -1661,7 +1664,7 @@ rte_hash_get_key_data_with_position_force_x(const struct rte_hash_x *h, const in
 }
 
 
-int /* __rte_experimental */
+int32_t /* __rte_experimental */
 rte_hash_free_key_with_position_x(const struct rte_hash_x *h,
 				const int32_t position, void **data)
 {
@@ -2185,7 +2188,7 @@ __rte_hash_lookup_bulk_x(const struct rte_hash_x *h, const void **keys,
 						positions, hit_mask, data);
 }
 
-int
+int32_t
 rte_hash_lookup_bulk_x(const struct rte_hash_x *h, const void **keys,
 		      uint32_t num_keys, int32_t *positions)
 {
@@ -2198,7 +2201,7 @@ rte_hash_lookup_bulk_x(const struct rte_hash_x *h, const void **keys,
 	return __builtin_popcountl(hit_mask);
 }
 
-int
+int32_t
 rte_hash_lookup_bulk_data_x(const struct rte_hash_x *h, const void **keys,
 		      uint32_t num_keys, uint64_t *hit_mask, void *data[])
 {
@@ -2214,7 +2217,7 @@ rte_hash_lookup_bulk_data_x(const struct rte_hash_x *h, const void **keys,
 	return __builtin_popcountl(*hit_mask);
 }
 
-int
+int32_t
 rte_hash_lookup_bulk_data_with_position_x(const struct rte_hash_x *h, const void **keys,
 		      uint32_t num_keys, int32_t *positions, uint64_t *hit_mask, void *data[])
 {

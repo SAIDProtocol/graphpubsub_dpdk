@@ -136,7 +136,7 @@ extern "C" {
         int ret;
 
         ret = rte_hash_lookup_data_x(table->keys, dst_guid, (void **) &value);
-        if (ret < 0) return NULL;
+        if (unlikely(ret < 0)) return NULL;
         return value;
     }
 

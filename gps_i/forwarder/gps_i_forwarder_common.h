@@ -22,7 +22,7 @@
 extern "C" {
 #endif
 
-#define GPS_I_FORWARDER_COMMON_DEBUG
+    //#define GPS_I_FORWARDER_COMMON_DEBUG
 
 #ifdef GPS_I_FORWARDER_COMMON_DEBUG
 #include <rte_log.h>
@@ -50,12 +50,18 @@ extern "C" {
 #define GPS_I_FORWARDER_HDR_MBUF_DATA_SIZE (2 * RTE_PKTMBUF_HEADROOM)
 #define GPS_I_FORWARDER_INCOMING_RING_SIZE 4096
 
-#define GPS_I_FORWARDER_RING_BURST_SIZE 64
+
+#define GPS_I_FORWARDER_BUFFERED_SEND
+
+#ifdef GPS_I_FORWARDER_BUFFERED_SEND
+#define GPS_I_FORWARDER_RING_BURST_SIZE 128
 #define GPS_I_FORWARDER_RING_BURST_DRAIN_US 100
+#endif
 
 #define GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE 0
 #define GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE 1
 #define GPS_I_FORWARDER_PUBLICATION_ACTION_COPY 2
+//#define GPS_I_FORWARDER_PUBLICATION_ACTION_COPY_USE_SEP_POOL
 
 #define GPS_I_FORWARDER_PUBLICATION_ACTION GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
 
@@ -71,7 +77,9 @@ extern "C" {
 #if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
         struct rte_mempool *hdr_pool;
 #elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
-//        struct rte_mempool *create_pool;
+#ifdef GPS_I_FORWARDER_PUBLICATION_ACTION_COPY_USE_SEP_POOL
+        struct rte_mempool *create_pool;
+#endif
 #endif
         // values that will not appear in const forwarder
         // gnrs pending table: will always change value, therefore, will not be in const forwarder
@@ -90,7 +98,9 @@ extern "C" {
 #if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_REFERENCE
         struct rte_mempool *hdr_pool;
 #elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
-//        struct rte_mempool *create_pool;
+#ifdef GPS_I_FORWARDER_PUBLICATION_ACTION_COPY_USE_SEP_POOL
+        struct rte_mempool *create_pool;
+#endif
 #endif
     };
 
@@ -187,18 +197,20 @@ extern "C" {
                 forwarder->hdr_pool, GPS_I_FORWARDER_HDR_MBUF_SIZE,
                 sizeof (struct gps_i_anno), GPS_I_FORWARDER_HDR_MBUF_DATA_SIZE);
 #elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
-//        snprintf(tmp_name, sizeof (tmp_name), "POLC_%s", name);
-//        DEBUG("create_pool name: %s", tmp_name);
-//        forwarder->create_pool = rte_pktmbuf_pool_create(tmp_name,
-//                GPS_I_FORWARDER_PKT_MBUF_SIZE, 32, sizeof (struct gps_i_anno),
-//                GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE, socket_id);
-//        if (unlikely(forwarder->create_pool == NULL)) {
-//            DEBUG("fail to create create_pool, reason: %s", rte_strerror(rte_errno));
-//            goto fail;
-//        }
-//        DEBUG("create_pool: %p, n=%d, priv_size=%zd, data_size=%d",
-//                forwarder->create_pool, GPS_I_FORWARDER_PKT_MBUF_SIZE,
-//                sizeof (struct gps_i_anno), GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE);
+#ifdef GPS_I_FORWARDER_PUBLICATION_ACTION_COPY_USE_SEP_POOL
+        snprintf(tmp_name, sizeof (tmp_name), "POLC_%s", name);
+        DEBUG("create_pool name: %s", tmp_name);
+        forwarder->create_pool = rte_pktmbuf_pool_create(tmp_name,
+                GPS_I_FORWARDER_PKT_MBUF_SIZE, 32, sizeof (struct gps_i_anno),
+                GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE, socket_id);
+        if (unlikely(forwarder->create_pool == NULL)) {
+            DEBUG("fail to create create_pool, reason: %s", rte_strerror(rte_errno));
+            goto fail;
+        }
+        DEBUG("create_pool: %p, n=%d, priv_size=%zd, data_size=%d",
+                forwarder->create_pool, GPS_I_FORWARDER_PKT_MBUF_SIZE,
+                sizeof (struct gps_i_anno), GPS_I_FORWARDER_PKT_MBUF_DATA_SIZE);
+#endif
 #endif
 
         gps_na_copy(&forwarder->my_na, na);
@@ -239,10 +251,12 @@ fail:
                 rte_mempool_free(forwarder->hdr_pool);
             }
 #elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
-//            if (forwarder->create_pool != NULL) {
-//                DEBUG("free create_pool=%p", forwarder->create_pool);
-//                rte_mempool_free(forwarder->create_pool);
-//            }
+#ifdef GPS_I_FORWARDER_PUBLICATION_ACTION_COPY_USE_SEP_POOL
+            if (forwarder->create_pool != NULL) {
+                DEBUG("free create_pool=%p", forwarder->create_pool);
+                rte_mempool_free(forwarder->create_pool);
+            }
+#endif
 #endif
             memset(forwarder, 0, sizeof (struct gps_i_forwarder_control_plane));
             rte_free(forwarder);
@@ -279,8 +293,10 @@ fail:
         DEBUG("free hdr_pool=%p", forwarder->hdr_pool);
         rte_mempool_free(forwarder->hdr_pool);
 #elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
-//        DEBUG("free create_pool=%p", forwarder->create_pool);
-//        rte_mempool_free(forwarder->create_pool);
+#ifdef GPS_I_FORWARDER_PUBLICATION_ACTION_COPY_USE_SEP_POOL
+        DEBUG("free create_pool=%p", forwarder->create_pool);
+        rte_mempool_free(forwarder->create_pool);
+#endif
 #endif
 
         memset(forwarder, 0, sizeof (struct gps_i_forwarder_control_plane));
@@ -303,37 +319,45 @@ fail:
         struct rte_ring *ring;
         uint64_t sent_count;
         uint64_t discarded_count;
+#ifdef GPS_I_FORWARDER_BUFFERED_SEND
         struct rte_mbuf *pending_sends[GPS_I_FORWARDER_RING_BURST_SIZE];
         uint32_t pending_count;
         uint64_t last_sent;
+#endif
     };
 
     static __rte_always_inline void
     gps_i_forwarder_try_send_to_ring(struct gps_i_forwarder_ring_with_stat *ring, struct rte_mbuf *pkt) {
+#ifdef GPS_I_FORWARDER_BUFFERED_SEND
         unsigned ret;
         ring->pending_sends[ring->pending_count++] = pkt;
         if (unlikely(ring->pending_count == GPS_I_FORWARDER_RING_BURST_SIZE)) {
-            ret = rte_ring_enqueue_burst(ring->ring, (void **) ring->pending_sends, GPS_I_FORWARDER_RING_BURST_SIZE, NULL);
-            ring->sent_count += ret;
-            ring->discarded_count += GPS_I_FORWARDER_RING_BURST_SIZE - ret;
-            if (unlikely(ret < GPS_I_FORWARDER_RING_BURST_SIZE)) {
-                while (ret < GPS_I_FORWARDER_RING_BURST_SIZE) {
-                    rte_pktmbuf_free(ring->pending_sends[ret++]);
+            ret = rte_ring_enqueue_bulk(ring->ring, (void **) ring->pending_sends, GPS_I_FORWARDER_RING_BURST_SIZE, NULL);
+            if (unlikely(ret == 0)) {
+                ret = rte_ring_enqueue_burst(ring->ring, (void **) ring->pending_sends, GPS_I_FORWARDER_RING_BURST_SIZE, NULL);
+                ring->sent_count += ret;
+                ring->discarded_count += GPS_I_FORWARDER_RING_BURST_SIZE - ret;
+                if (unlikely(ret < GPS_I_FORWARDER_RING_BURST_SIZE)) {
+                    while (ret < GPS_I_FORWARDER_RING_BURST_SIZE) {
+                        rte_pktmbuf_free(ring->pending_sends[ret++]);
+                    }
                 }
+            } else {
+                ring->sent_count += ret;
             }
             ring->pending_count = 0;
             ring->last_sent = rte_rdtsc();
         }
-        //        int ret;
-        //        ret = rte_ring_enqueue(ring->ring, pkt);
-        //        if (unlikely(ret < 0)) {
-        //            ring->discarded_count++;
-        //            rte_pktmbuf_free(pkt);
-        //            return false;
-        //        } else {
-        //            ring->sent_count++;
-        //            return true;
-        //        }
+#else
+        int ret;
+        ret = rte_ring_enqueue(ring->ring, pkt);
+        if (unlikely(ret < 0)) {
+            ring->discarded_count++;
+            rte_pktmbuf_free(pkt);
+        } else {
+            ring->sent_count++;
+        }
+#endif
     }
 
     struct gps_i_forwarder_process_lcore {

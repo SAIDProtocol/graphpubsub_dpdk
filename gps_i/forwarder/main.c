@@ -114,45 +114,55 @@ main_loop_receiver(void *params) {
     DEBUG("Receiver on lcore %u, port %" PRIu16 " exit!", rte_lcore_id(), lcore->port_id);
 }
 
+//#define BULK
+
 static int
 main_loop_sender(void *params) {
     struct sender_params *lcore = (struct sender_params *) params;
     struct rte_mbuf * pkts_burst[DEFAULT_BURST_SIZE];
     uint16_t nb_rcv, nb_sent;
-//    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * BURST_TX_DRAIN_US;
-//    uint64_t last_send_time = 0, cur_tsc;
+#ifdef BULK
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * BURST_TX_DRAIN_US;
+    uint64_t last_send_time = 0, cur_tsc;
+#endif
 
 
     DEBUG("lcore=%u, send port=%" PRIu16, rte_lcore_id(), lcore->port_id);
     while (running) {
-        nb_rcv = rte_ring_dequeue_burst(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
-//        nb_rcv = rte_ring_dequeue_bulk(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
-//        cur_tsc = rte_rdtsc();
-
+#ifdef BULK
+        nb_rcv = rte_ring_dequeue_bulk(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
+        cur_tsc = rte_rdtsc();
         // not a buffer yet
-//        if (unlikely(!nb_rcv)) {
-//            // not till drain yet
-//            if (likely(cur_tsc < last_send_time + drain_tsc)) continue;
-//            nb_rcv = rte_ring_dequeue_burst(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
-//            // no data to send
-//            if (unlikely(!nb_rcv)) {
-//                last_send_time = cur_tsc;
-//                continue;
-//            }
-//        }
-        lcore->received_count += nb_rcv;
-        for(nb_sent = 0; nb_sent < nb_rcv; nb_sent++) {
-            rte_pktmbuf_free(pkts_burst[nb_sent]);
+        if (unlikely(!nb_rcv)) {
+            // not till drain yet
+            if (likely(cur_tsc < last_send_time + drain_tsc)) continue;
+            nb_rcv = rte_ring_dequeue_burst(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
+            // no data to send
+            if (unlikely(!nb_rcv)) {
+                last_send_time = cur_tsc;
+                continue;
+            }
         }
-        
-//        nb_sent = rte_eth_tx_burst(0, 0, pkts_burst, nb_rcv);
-////        last_send_time = cur_tsc;
-//        lcore->sent_count += nb_sent;
-//        while (unlikely(nb_sent < nb_rcv)) {
-//            rte_pktmbuf_free(pkts_burst[nb_sent++]);
-//        }
-//        if (nb_rcv < DEFAULT_BURST_SIZE)
-//            rte_delay_us(10);
+        lcore->received_count += nb_rcv;
+        nb_sent = rte_eth_tx_burst(lcore->port_id, 0, pkts_burst, nb_rcv);
+        last_send_time = cur_tsc;
+        lcore->sent_count += nb_sent;
+        while (unlikely(nb_sent < nb_rcv)) {
+            rte_pktmbuf_free(pkts_burst[nb_sent++]);
+        }
+#else
+        nb_rcv = rte_ring_dequeue_burst(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
+        lcore->received_count += nb_rcv;
+        nb_sent = rte_eth_tx_burst(lcore->port_id, 0, pkts_burst, nb_rcv);
+        lcore->sent_count += nb_sent;
+        while (unlikely(nb_sent < nb_rcv)) {
+            rte_pktmbuf_free(pkts_burst[nb_sent++]);
+        }
+        if (nb_rcv < DEFAULT_BURST_SIZE)
+            rte_delay_us(100);
+#endif
+
+
     }
     DEBUG("Sender on lcore %u, port %" PRIu16 " exit!", rte_lcore_id(), lcore->port_id);
 }
@@ -163,25 +173,32 @@ main_loop_processor(void *params) {
     struct rte_mbuf * pkts_burst[DEFAULT_BURST_SIZE];
     unsigned burst_size;
     int j;
+    int k;
 
     DEBUG("lcore=%u, process, ring:%p", rte_lcore_id(), lcore->incoming_ring);
+    urcu_qsbr_register_thread();
     while (running) {
-        burst_size = rte_ring_dequeue_burst(lcore->incoming_ring, (void **) pkts_burst, DEFAULT_BURST_SIZE, NULL);
-        //        DEBUG("burst_size=%" PRIu16, burst_size);
+        for (k = 0; k < 16; k++) {
 
-        for (j = 0; j < PREFETCH_OFFSET && j < (int) burst_size; j++) {
-            //            DEBUG("prefetch=%" PRIu16, j);
-            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
+            burst_size = rte_ring_dequeue_burst(lcore->incoming_ring, (void **) pkts_burst, DEFAULT_BURST_SIZE, NULL);
+            //        DEBUG("burst_size=%" PRIu16, burst_size);
+
+            for (j = 0; j < PREFETCH_OFFSET && j < (int) burst_size; j++) {
+                //            DEBUG("prefetch=%" PRIu16, j);
+                rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j], void *));
+            }
+            for (j = 0; j < (int) (burst_size - PREFETCH_OFFSET); j++) {
+                //            DEBUG("prefetch=%" PRIu16, j + PREFETCH_OFFSET);
+                rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j + PREFETCH_OFFSET], void *));
+                gps_i_forwarder_handle_packet(lcore, pkts_burst[j]);
+            }
+            for (; j < (int) burst_size; j++) {
+                gps_i_forwarder_handle_packet(lcore, pkts_burst[j]);
+            }
         }
-        for (j = 0; j < (int) (burst_size - PREFETCH_OFFSET); j++) {
-            //            DEBUG("prefetch=%" PRIu16, j + PREFETCH_OFFSET);
-            rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[j + PREFETCH_OFFSET], void *));
-            gps_i_forwarder_handle_packet(lcore, pkts_burst[j]);
-        }
-        for (; j < (int) burst_size; j++) {
-            gps_i_forwarder_handle_packet(lcore, pkts_burst[j]);
-        }
+        urcu_qsbr_quiescent_state();
     }
+    urcu_qsbr_unregister_thread();
     DEBUG("Process on lcore %u exit!", rte_lcore_id());
 }
 
@@ -198,6 +215,7 @@ main_loop_control(void *params) {
 
     while (running) {
         burst_size = rte_ring_dequeue_burst(lcore->incoming_ring, (void **) pkts, DEFAULT_BURST_SIZE, NULL);
+        if (unlikely(burst_size == 0)) continue;
         for (j = 0; j < burst_size; j++) {
             lcore->received_count++;
             DEBUG("Got packet %p from incoming ring, data size=%" PRIu16 ", free", pkts[j], rte_pktmbuf_data_len(pkts[j]));

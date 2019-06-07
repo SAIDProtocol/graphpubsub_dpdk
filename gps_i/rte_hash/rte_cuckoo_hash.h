@@ -34,16 +34,24 @@
 #include <rte_rwlock.h>
 
 static int
-rte_hash_k8_cmp_eq(const void *key1, const void *key2, size_t key_len __rte_unused) {
-    //    printf("[8] key1=%p, key2=%p\n", key1, key2);
-    return *(const uint64_t *) key1 == *(const uint64_t *) key2;
+rte_hash_k4_cmp_eq(const void *key1, const void *key2, size_t key_len __rte_unused) {
+    //    printf("[4] key1=%p, key2=%p\n", key1, key2);
+    return *(const uint32_t *) key1 ^ *(const uint32_t *) key2;
 }
 
 static int
-rte_hash_k4_cmp_eq(const void *key1, const void *key2, size_t key_len __rte_unused) {
-    //    printf("[4] key1=%p, key2=%p\n", key1, key2);
-    return *(const uint32_t *) key1 != *(const uint32_t *) key2;
+rte_hash_k8_cmp_eq(const void *key1, const void *key2, size_t key_len __rte_unused) {
+    //    printf("[8] key1=%p, key2=%p\n", key1, key2);
+    return *(const uint64_t *) key1 ^ *(const uint64_t *) key2;
 }
+
+static int
+rte_hash_k12_cmp_eq(const void *key1, const void *key2, size_t key_len) {
+    //    printf("[12] key1=%p, key2=%p\n", key1, key2);
+    return rte_hash_k4_cmp_eq((const uint64_t *) key1 + 1, (const uint64_t *) key2 + 1, key_len) ||
+            rte_hash_k8_cmp_eq(key1, key2, key_len);
+}
+
 
 #if defined(RTE_ARCH_X86) || defined(RTE_ARCH_ARM64)
 
@@ -55,6 +63,7 @@ enum cmp_jump_table_case_x {
     KEY_CUSTOM = 0,
     KEY_4_BYTES,
     KEY_8_BYTES,
+    KEY_12_BYTES,
     KEY_16_BYTES,
     KEY_32_BYTES,
     KEY_48_BYTES,
@@ -75,6 +84,7 @@ const rte_hash_cmp_eq_t cmp_jump_table_x[NUM_KEY_CMP_CASES] = {
     NULL,
     rte_hash_k4_cmp_eq,
     rte_hash_k8_cmp_eq,
+    rte_hash_k12_cmp_eq,
     rte_hash_k16_cmp_eq,
     rte_hash_k32_cmp_eq,
     rte_hash_k48_cmp_eq,

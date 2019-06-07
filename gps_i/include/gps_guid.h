@@ -10,7 +10,8 @@
 
 #include <rte_byteorder.h>
 #include <rte_common.h>
-#include <rte_jhash.h>
+//#include <rte_jhash.h>
+#include <rte_hash_crc.h>
 #include <rte_memcpy.h>
 #include <stdint.h>
 #include <string.h>
@@ -97,22 +98,16 @@ extern "C" {
 
     static __rte_always_inline uint32_t
     gps_guid_hash(const void *key, uint32_t key_len __rte_unused, uint32_t init_val) {
-        //        printf("GUID_HASH: key=%p\n", key);
+        //                printf("GUID_HASH: key=%p\n", key);
 #if GPS_GUID_SIZE == 12
-        const union {
-            struct gps_guid guid;
-            uint32_t vals[3];
-        } *x = key;
-        return rte_jhash_3words(x->vals[0], x->vals[1], x->vals[2], init_val);
+        {
+            init_val = rte_hash_crc_8byte(*(const uint64_t *) key, init_val);
+            return rte_hash_crc_4byte(*(const uint32_t *) ((const uint64_t *) key + 1), init_val);
+        }
 #elif GPS_GUID_SIZE == 8
-
-        const union {
-            struct gps_guid guid;
-            uint32_t vals[2];
-        } *x = key;
-        return rte_jhash_2words(x->vals[0], x->vals[1], init_val);
+        return rte_hash_crc_8byte(*(const uint64_t *) key, init_val);
 #else
-        return rte_jhash(key, GPS_GUID_SIZE, init_val);
+        return rte_hash_crc(key, GPS_GUID_SIZE, init_val);
 #endif
 
     }

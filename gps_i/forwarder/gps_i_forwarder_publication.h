@@ -95,13 +95,68 @@ extern "C" {
     }
 
     static __rte_always_inline void
+    gps_i_forwarder_encapsulate_and_free(struct gps_i_forwarder_process_lcore *lcore, struct rte_mbuf *pkt, const struct gps_i_neighbor_info *neighbor_info) {
+        const struct gps_i_neighbor_info *local_info;
+        struct ether_hdr *eth_hdr;
+        struct ipv4_hdr *ip_hdr;
+#ifdef GPS_I_FORWARDER_ENCAP_DECAP_DEBUG
+        char na_buf[GPS_NA_FMT_SIZE], info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
+#endif        
+        DEBUG("neighbor_info=%s [%p]",
+                neighbor_info == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), neighbor_info),
+                neighbor_info);
+        //        if (unlikely(neighbor_info == NULL)) {
+        //            DEBUG("Cannot find next hop, discard pkt: %p", pkt);
+        //            rte_pktmbuf_free(pkt);
+        //            return;
+        //        }
+
+        DEBUG("pkt_start=%p", rte_pktmbuf_mtod(pkt, void *));
+        local_info = &lcore->forwarder->my_encap_info[neighbor_info->port];
+        if (unlikely(neighbor_info->use_ip)) {
+            eth_hdr = (struct ether_hdr *) (rte_pktmbuf_prepend(pkt, sizeof (struct ether_hdr) + sizeof (struct ipv4_hdr)));
+            ip_hdr = (struct ipv4_hdr *) (eth_hdr + 1);
+            DEBUG("pkt_start=%p, eth_hdr=%p, ip_hdr=%p", rte_pktmbuf_mtod(pkt, void *), eth_hdr, ip_hdr);
+            if (unlikely(eth_hdr == NULL)) {
+                DEBUG("Cannot prepend ether header, free pkt=%p", pkt);
+                rte_pktmbuf_free(pkt);
+                return;
+            }
+            eth_hdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
+            // populate ip_hdr
+            ip_hdr->version_ihl = 0x40 | (sizeof (struct ipv4_hdr) >> 2);
+            ip_hdr->type_of_service = 0x10;
+            ip_hdr->total_length = rte_cpu_to_be_16(rte_pktmbuf_data_len(pkt) - sizeof (struct ether_hdr));
+            ip_hdr->packet_id = rte_cpu_to_be_16(++lcore->ip_id);
+            ip_hdr->fragment_offset = rte_cpu_to_be_16(0x4000); // don't fragment
+            ip_hdr->time_to_live = 64;
+            ip_hdr->next_proto_id = GPS_PROTO_TYPE_IP;
+            ip_hdr->src_addr = local_info->ip;
+            ip_hdr->dst_addr = neighbor_info->ip;
+            ip_hdr->hdr_checksum = rte_ipv4_phdr_cksum(ip_hdr, pkt->ol_flags);
+        } else {
+            eth_hdr = (struct ether_hdr *) (rte_pktmbuf_prepend(pkt, sizeof (struct ether_hdr)));
+            DEBUG("pkt_start=%p, eth_hdr=%p", rte_pktmbuf_mtod(pkt, void *), eth_hdr);
+            if (unlikely(eth_hdr == NULL)) {
+                DEBUG("Cannot prepend ether header, free pkt=%p", pkt);
+                rte_pktmbuf_free(pkt);
+                return;
+            }
+            eth_hdr->ether_type = rte_cpu_to_be_16(GPS_PROTO_TYPE_ETHER);
+        }
+        ether_addr_copy(&local_info->ether, &eth_hdr->s_addr);
+        ether_addr_copy(&neighbor_info->ether, &eth_hdr->d_addr);
+        rte_pktmbuf_free(pkt);
+    }
+
+    static __rte_always_inline void
     gps_i_forwarder_handle_publication_downstream(struct gps_i_forwarder_process_lcore *lcore,
             struct rte_mbuf *pkt, struct gps_pkt_publication *publication) {
         const struct gps_guid *dst_guid;
-//        const struct gps_na *next_hop_na;
-//        const struct gps_i_neighbor_info *next_hop_neighbor;
+        const struct gps_na *next_hop_na;
+        const struct gps_i_neighbor_info *next_hop_neighbor;
         const struct gps_i_subscription_entry *entry;
-//        uint32_t i;
+        uint32_t i;
 #ifdef GPS_I_FORWARDER_PUBLICATION_DEBUG
         char dst_guid_buf[GPS_GUID_FMT_SIZE], na_buf[GPS_NA_FMT_SIZE], neighbor_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
 #endif
@@ -109,51 +164,56 @@ extern "C" {
         DEBUG("Publication downstream!");
         dst_guid = gps_pkt_publication_get_dst_guid(publication);
         DEBUG("dst_guid=%s", gps_guid_format(dst_guid_buf, sizeof (dst_guid_buf), dst_guid));
-//
+
         entry = gps_i_subscription_table_lookup(lcore->forwarder->subscription_table, dst_guid);
-//
-//        if (unlikely(entry == NULL)) {
-//            DEBUG("Lookup guid found nothing, free publication packet: %p", pkt);
-//            rte_pktmbuf_free(pkt);
-//            return;
-//        }
+
+        if (unlikely(entry == NULL)) {
+            DEBUG("Lookup guid found nothing, free publication packet: %p", pkt);
+            rte_pktmbuf_free(pkt);
+            return;
+        }
+
 
 #if GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_COPY
-        //        struct rte_mbuf *created;
-        //        char *data;
+        struct rte_mbuf *created;
+        char *data;
         //        rte_pktmbuf_linearize(pkt);
-        //        //        gps_i_neighbor_table_get_entry_at_position(lcore->forwarder->neighbor_table, entry->next_hop_positions_in_neighbor_table[0], &next_hop_na, &next_hop_neighbor);
-        //        for (i = 0; i < entry->count - 1; i++) {
-        //            created = rte_pktmbuf_alloc(lcore->forwarder->create_pool);
-        //            if (unlikely(created == NULL)) {
-        //                DEBUG("Cannot allocate a new packet!");
-        //                break;
-        //            }
-        //            DEBUG("created=%p", created);
-        //            created->port = pkt->port;
-        //            created->vlan_tci = pkt->vlan_tci;
-        //            created->vlan_tci_outer = pkt->vlan_tci_outer;
-        //            created->tx_offload = pkt->tx_offload;
-        //            created->hash = pkt->hash;
-        //            data = rte_pktmbuf_append(created, rte_pktmbuf_data_len(pkt));
-        //            DEBUG("data=%p", data);
-        //            rte_memcpy(data, publication, rte_pktmbuf_data_len(pkt));
-        //            gps_i_neighbor_table_get_entry_at_position(lcore->forwarder->neighbor_table, entry->next_hop_positions_in_neighbor_table[i], &next_hop_na, &next_hop_neighbor);
-        //            DEBUG("next_hop=%s|%s",
-        //                    gps_na_format(na_buf, sizeof (na_buf), next_hop_na),
-        //                    gps_i_neighbor_info_format(neighbor_buf, sizeof (neighbor_buf), next_hop_neighbor));
-        //            gps_i_forwarder_encapsulate(lcore, created, next_hop_neighbor);
-        //            //                    gps_i_forwarder_try_send_to_ring(lcore->outgoing_rings + 0, created);
-        //        }
-        //        i = 0;
+        //        gps_i_neighbor_table_get_entry_at_position(lcore->forwarder->neighbor_table, entry->next_hop_positions_in_neighbor_table[0], &next_hop_na, &next_hop_neighbor);
+        for (i = 0; i < entry->count - 1; i++) {
+#ifdef GPS_I_FORWARDER_PUBLICATION_ACTION_COPY_USE_SEP_POOL
+            created = rte_pktmbuf_alloc(lcore->forwarder->create_pool);
+#else
+            created = rte_pktmbuf_alloc(lcore->forwarder->pkt_pool);
+#endif
+            if (unlikely(created == NULL)) {
+                DEBUG("Cannot allocate a new packet!");
+                break;
+            }
+            DEBUG("created=%p", created);
+            //            created->port = pkt->port;
+            //            created->vlan_tci = pkt->vlan_tci;
+            //            created->vlan_tci_outer = pkt->vlan_tci_outer;
+            //            created->tx_offload = pkt->tx_offload;
+            //            created->hash = pkt->hash;
+            data = rte_pktmbuf_append(created, rte_pktmbuf_data_len(pkt));
+            DEBUG("data=%p", data);
+            //            rte_memcpy(data, publication, rte_pktmbuf_data_len(pkt));
+            gps_i_neighbor_table_get_entry_at_position(lcore->forwarder->neighbor_table, entry->next_hop_positions_in_neighbor_table[i], &next_hop_na, &next_hop_neighbor);
+            DEBUG("next_hop=%s|%s",
+                    gps_na_format(na_buf, sizeof (na_buf), next_hop_na),
+                    gps_i_neighbor_info_format(neighbor_buf, sizeof (neighbor_buf), next_hop_neighbor));
+            gps_i_forwarder_encapsulate(lcore, created, next_hop_neighbor);
+            //            gps_i_forwarder_try_send_to_ring(lcore->outgoing_rings + 0, created);
+            //            rte_pktmbuf_free(created);
+        }
         // handle the last packet, use pkt itself.
-        //        gps_i_neighbor_table_get_entry_at_position(lcore->forwarder->neighbor_table, entry->next_hop_positions_in_neighbor_table[i], &next_hop_na, &next_hop_neighbor);
-        //        DEBUG("next_hop=%s|%s",
-        //                gps_na_format(na_buf, sizeof (na_buf), next_hop_na),
-        //                gps_i_neighbor_info_format(neighbor_buf, sizeof (neighbor_buf), next_hop_neighbor));
-        //        gps_i_forwarder_encapsulate(lcore, pkt, next_hop_neighbor);
+        gps_i_neighbor_table_get_entry_at_position(lcore->forwarder->neighbor_table, entry->next_hop_positions_in_neighbor_table[i], &next_hop_na, &next_hop_neighbor);
+        DEBUG("next_hop=%s|%s",
+                gps_na_format(na_buf, sizeof (na_buf), next_hop_na),
+                gps_i_neighbor_info_format(neighbor_buf, sizeof (neighbor_buf), next_hop_neighbor));
+        gps_i_forwarder_encapsulate(lcore, pkt, next_hop_neighbor);
         //        gps_i_forwarder_try_send_to_ring(lcore->outgoing_rings + 0, pkt);
-        rte_pktmbuf_free(pkt);
+        //                rte_pktmbuf_free(pkt);
 
 #elif GPS_I_FORWARDER_PUBLICATION_ACTION == GPS_I_FORWARDER_PUBLICATION_ACTION_CLONE
 #error "Clone does not seem to work..."

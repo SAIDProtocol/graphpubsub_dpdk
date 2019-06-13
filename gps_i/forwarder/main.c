@@ -100,7 +100,7 @@ main_loop_receiver(void *params) {
 
     DEBUG("lcore=%u, receive port=%" PRIu16, rte_lcore_id(), lcore->port_id);
     DEBUG("to_process=%p", lcore->to_processor);
-    while (running) {
+    while (likely(running)) {
         nb_rcv = rte_eth_rx_burst(lcore->port_id, 0, pkts_burst, DEFAULT_BURST_SIZE);
         lcore->received_count += nb_rcv;
 
@@ -128,7 +128,7 @@ main_loop_sender(void *params) {
 
 
     DEBUG("lcore=%u, send port=%" PRIu16, rte_lcore_id(), lcore->port_id);
-    while (running) {
+    while (likely(running)) {
 #ifdef BULK
         nb_rcv = rte_ring_dequeue_bulk(lcore->from_processor, (void *) pkts_burst, DEFAULT_BURST_SIZE, NULL);
         cur_tsc = rte_rdtsc();
@@ -159,7 +159,7 @@ main_loop_sender(void *params) {
             rte_pktmbuf_free(pkts_burst[nb_sent++]);
         }
         if (nb_rcv < DEFAULT_BURST_SIZE)
-            rte_delay_us(100);
+            rte_delay_us(10);
 #endif
 
 
@@ -174,10 +174,13 @@ main_loop_processor(void *params) {
     unsigned burst_size;
     int j;
     int k;
+    uint64_t start, end;
 
     DEBUG("lcore=%u, process, ring:%p", rte_lcore_id(), lcore->incoming_ring);
     urcu_qsbr_register_thread();
-    while (running) {
+    start = rte_get_timer_cycles();
+
+    while (likely(running)) {
         for (k = 0; k < 16; k++) {
 
             burst_size = rte_ring_dequeue_burst(lcore->incoming_ring, (void **) pkts_burst, DEFAULT_BURST_SIZE, NULL);
@@ -198,6 +201,9 @@ main_loop_processor(void *params) {
         }
         urcu_qsbr_quiescent_state();
     }
+    end = rte_get_timer_cycles();
+    DEBUG("processor %u\t%" PRIu64 "\t%" PRIu64, rte_lcore_id(), end - start, rte_get_timer_hz());
+
     urcu_qsbr_unregister_thread();
     DEBUG("Process on lcore %u exit!", rte_lcore_id());
 }
@@ -213,7 +219,7 @@ main_loop_control(void *params) {
     //    rte_delay_ms(70000);
     //    running = false;
 
-    while (running) {
+    while (likely(running)) {
         burst_size = rte_ring_dequeue_burst(lcore->incoming_ring, (void **) pkts, DEFAULT_BURST_SIZE, NULL);
         if (unlikely(burst_size == 0)) continue;
         for (j = 0; j < burst_size; j++) {
@@ -253,6 +259,7 @@ int main(int argc, char **argv) {
     struct sender_params *sender_params;
     struct receiver_params *receiver_params;
     FILE *f;
+    struct rte_eth_stats stats1, stats2;
 
     char info_buf[GPS_I_NEIGHBOR_INFO_FMT_SIZE];
     char tmp_name[RTE_MEMZONE_NAMESIZE];
@@ -303,7 +310,7 @@ int main(int argc, char **argv) {
         encap_info[port].use_ip = true;
         snprintf(tmp_name, sizeof (tmp_name), "OTR_%" PRIu16, port);
         outgoing_rings[port] = rte_ring_create(tmp_name,
-                GPS_I_FORWARDER_INCOMING_RING_SIZE, rte_socket_id(), RING_F_SC_DEQ);
+                GPS_I_FORWARDER_SENDER_INCOMING_RING_SIZE, rte_socket_id(), RING_F_SC_DEQ);
         if (outgoing_rings[port] == NULL) {
             FAIL("Cannot create ring for port %" PRIu16, port);
         }
@@ -397,6 +404,9 @@ int main(int argc, char **argv) {
         FAIL("Cannot malloc process_lcores, reason: %s", rte_strerror(rte_errno));
     }
 
+    rte_eth_stats_get(0, &stats1);
+
+
     for (port = 0; port < port_count; port++) {
         // start send core
         lcore = rte_get_next_lcore(lcore, 1, 0);
@@ -449,6 +459,8 @@ int main(int argc, char **argv) {
     gps_i_forwarder_control_lcore_destroy(control_lcore, port_count);
     gps_i_forwarder_control_plane_destroy(forwarder_c);
 
+    rte_eth_stats_get(0, &stats2);
+
     for (port = 0; port < port_count; port++) {
         DEBUG("free outgoing_ring[%" PRIu16 "]: %p", port, outgoing_rings[port]);
         rte_ring_free(outgoing_rings[port]);
@@ -465,6 +477,10 @@ int main(int argc, char **argv) {
     rte_free(outgoing_rings);
     DEBUG("free encap_info: %p", encap_info);
     rte_free(encap_info);
+
+
+    DEBUG("imissed=%" PRIu64 ", rx_nombuf=%" PRIu64, stats2.imissed - stats1.imissed, stats2.rx_nombuf - stats1.rx_nombuf);
+
 
     dump_mem("dmp_main_1.txt");
     return 0;

@@ -109,11 +109,11 @@ success:
         DEBUG("neighbor_info=%s [%p]",
                 neighbor_info == NULL ? "" : gps_i_neighbor_info_format(info_buf, sizeof (info_buf), neighbor_info),
                 neighbor_info);
-        if (unlikely(neighbor_info == NULL)) {
-            DEBUG("Cannot find next hop, discard pkt: %p", pkt);
-            rte_pktmbuf_free(pkt);
-            return;
-        }
+//        if (unlikely(neighbor_info == NULL)) {
+//            DEBUG("Cannot find next hop, discard pkt: %p", pkt);
+//            rte_pktmbuf_free(pkt);
+//            return;
+//        }
 
         DEBUG("pkt_start=%p", rte_pktmbuf_mtod(pkt, void *));
         local_info = &lcore->forwarder->my_encap_info[neighbor_info->port];

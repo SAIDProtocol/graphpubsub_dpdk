@@ -37,12 +37,13 @@
 #define PKT_MBUF_DATA_SIZE RTE_MBUF_DEFAULT_BUF_SIZE
 #define MAX_PKT_BURST 64
 #define PKT_SIZE 64
-#define USE_BUILT_IN_RANDOM
+//#define USE_BUILT_IN_RANDOM
+#define PKTS_PER_SECOND 6000000
 
 #ifdef USE_BUILT_IN_RANDOM
-#define NUM_PKT_TO_SEND 50000000
+#define NUM_PKT_TO_SEND 1000000000
 #else
-#define NUM_PKT_TO_SEND 100000000
+#define NUM_PKT_TO_SEND (PKTS_PER_SECOND * 10)
 #endif
 
 struct candidate_buf *
@@ -560,7 +561,7 @@ main_loop_generator_slave(void *param) {
         }
     }
     end = rte_get_timer_cycles();
-    DEBUG("%u\t%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64,
+    printf("%u\t%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\n",
             rte_lcore_id(), total, start, end, rte_get_timer_hz(), dropped);
 }
 
@@ -615,8 +616,68 @@ main_loop_generator_mastr(void *param) {
     }
     running = false;
     end = rte_get_timer_cycles();
-    DEBUG("%u\t%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64,
+    printf("%u\t%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\n",
             rte_lcore_id(), total, start, end, rte_get_timer_hz(), dropped);
+}
+
+
+
+static int
+main_loop_generator_mastr_slow(void *param) {
+    struct generator_param *p = (struct generator_param *) param;
+    DEBUG("lcore=%u, queue=%" PRIu16, rte_lcore_id(), p->queue_id);
+    const uint64_t pkt_tsc = (rte_get_tsc_hz() + PKTS_PER_SECOND - 1) / PKTS_PER_SECOND;
+
+    struct rte_mbuf * pkts_burst[MAX_PKT_BURST], *pkt;
+    uint64_t total = 0, dropped = 0, next, start, end;
+    uint16_t i, remain;
+#ifndef USE_BUILT_IN_RANDOM
+    uint32_t pos = lrand48() % p->candidates->size;
+    int32_t skip = mrand48() % 10;
+#endif
+
+    rte_delay_ms(2000);
+    running = true;
+    remain = 0;
+    start = next = rte_rdtsc();
+
+    while (likely(total < NUM_PKT_TO_SEND)) {
+        for (i = remain; i < MAX_PKT_BURST; i++) {
+            pkt = rte_pktmbuf_alloc(p->packet_pool);
+            if (unlikely(pkt == NULL))
+                FAIL("Cannot allocate packet buffer, total=%" PRIu64 ".\n", total);
+            pkts_burst[i] = pkt;
+
+#ifdef USE_BUILT_IN_RANDOM
+            rte_memcpy(rte_pktmbuf_append(pkt, PKT_SIZE),
+                    rte_pktmbuf_mtod(p->candidates->pkts[lrand48() % p->candidates->size], void *), PKT_SIZE);
+#else
+            rte_memcpy(rte_pktmbuf_append(pkt, PKT_SIZE),
+                    rte_pktmbuf_mtod(p->candidates->pkts[pos], void *), PKT_SIZE);
+            pos = pos + skip + p->candidates-> size;
+            pos %= p->candidates->size;
+#endif
+
+            *rte_pktmbuf_mtod_offset(pkt, uint8_t *, PKT_SIZE - sizeof (uint64_t) - 1) = (uint8_t) p->queue_id;
+            *rte_pktmbuf_mtod_offset(pkt, uint64_t *, PKT_SIZE - sizeof (uint64_t)) =
+                    rte_cpu_to_be_64(total + i - remain);
+        }
+        while(likely(rte_rdtsc() < next));
+        i = rte_eth_tx_burst(0, p->queue_id, pkts_burst, MAX_PKT_BURST);
+        total += i;
+        next += i * pkt_tsc;
+        remain = MAX_PKT_BURST - i;
+        if (unlikely(remain > 0)) {
+            dropped += remain;
+            for (i = 0; i < remain; i++) {
+                pkts_burst[i] = pkts_burst[MAX_PKT_BURST - remain + i];
+            }
+        }
+    }
+    end = rte_rdtsc();
+    running = false;
+    printf("%u\t%" PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\t%"PRIu64 "\n",
+            rte_lcore_id(), total, start, end, rte_get_tsc_hz(), dropped);
 }
 
 int main(int argc, char **argv) {
@@ -631,18 +692,17 @@ int main(int argc, char **argv) {
     if (ret < 0) FAIL("Invalid EAL parameters.");
     argc -= ret;
     argv += ret;
-
-
+    
     pkt_pool = rte_pktmbuf_pool_create("pkt_pool", PKT_MBUF_SIZE, 32, 0, PKT_MBUF_DATA_SIZE, rte_socket_id());
     if (pkt_pool == NULL)
         FAIL("Cannot create pkt_pool, reason: %s", rte_strerror(rte_errno));
 
     cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:91:96", &src, sizeof (src));
     cmdline_parse_etheraddr(NULL, "ec:0d:9a:7e:90:c6", &dst, sizeof (dst));
-    //    candidates = generate_packets_routing(&src, &dst, pkt_pool);
-    //    candidates = generate_packets_gnrs(&src, &dst, pkt_pool);
-    //    candidates = generate_packets_single(&src, &dst, pkt_pool);
-    candidates = generate_packets_st(&src, &dst, pkt_pool);
+    candidates = generate_packets_routing(&src, &dst, pkt_pool);
+    // candidates = generate_packets_gnrs(&src, &dst, pkt_pool);
+    // candidates = generate_packets_single(&src, &dst, pkt_pool);
+    // candidates = generate_packets_st(&src, &dst, pkt_pool);
 
 
     lcore = rte_lcore_count();
@@ -655,22 +715,25 @@ int main(int argc, char **argv) {
 
     ret = 0;
 
-    RTE_LCORE_FOREACH_SLAVE(lcore) {
-        params[ret].candidates = candidates;
-        params[ret].packet_pool = pkt_pool;
-        params[ret].queue_id = ret;
-        rte_eal_remote_launch(main_loop_generator_slave, &params[ret], lcore);
-        ret++;
-    }
+//    RTE_LCORE_FOREACH_SLAVE(lcore) {
+//        params[ret].candidates = candidates;
+//        params[ret].packet_pool = pkt_pool;
+//        params[ret].queue_id = ret;
+//        rte_eal_remote_launch(main_loop_generator_slave, &params[ret], lcore);
+//        ret++;
+//    }
 
     params[ret].candidates = candidates;
     params[ret].packet_pool = pkt_pool;
     params[ret].queue_id = ret;
-    main_loop_generator_mastr(&params[ret]);
-
-    RTE_LCORE_FOREACH_SLAVE(lcore) {
-        rte_eal_wait_lcore(lcore);
-    }
+//    main_loop_generator_mastr(&params[ret]);
+    main_loop_generator_mastr_slow(&params[ret]);
+    
+    
+    
+//    RTE_LCORE_FOREACH_SLAVE(lcore) {
+//        rte_eal_wait_lcore(lcore);
+//    }
 
     rte_free(params);
     rte_mempool_free(pkt_pool);
